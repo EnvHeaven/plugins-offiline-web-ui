@@ -5,11 +5,13 @@ import { FormsModule } from "@angular/forms";
 interface DaemonStatus {
   ok?: boolean;
   daemon?: {
-    host?: string;
     port?: number;
-    selectedRepo?: string | null;
+    repoRoot?: string | null;
   };
-  summary?: string;
+  selectedRepo?: {
+    repoId: string;
+    repoRoot: string;
+  } | null;
 }
 
 interface RepoRecord {
@@ -43,7 +45,7 @@ interface VersionRecord {
             </div>
             <div class="rounded-2xl border border-moss-400/20 bg-ink-950/70 px-4 py-3 text-sm text-sand-200">
               <div class="font-medium text-white">Daemon</div>
-              <div>{{ status()?.summary ?? "Connecting..." }}</div>
+              <div>{{ statusError() ?? statusMessage() }}</div>
             </div>
           </div>
         </header>
@@ -156,6 +158,8 @@ interface VersionRecord {
 })
 export class AppComponent implements OnInit {
   readonly status = signal<DaemonStatus | null>(null);
+  readonly statusMessage = signal("Daemon connecting...");
+  readonly statusError = signal<string | null>(null);
   readonly repos = signal<RepoRecord[]>([]);
   readonly versions = signal<VersionRecord[]>([]);
   readonly capabilities = [
@@ -174,12 +178,39 @@ export class AppComponent implements OnInit {
   }
 
   async refreshStatus(): Promise<void> {
-    this.status.set(await readJson<DaemonStatus>("/api/status"));
+    try {
+      const payload = await readJson<DaemonStatus>("/api/status");
+      this.status.set(payload);
+      this.statusError.set(null);
+
+      const port = payload.daemon?.port;
+      const repoRoot = payload.selectedRepo?.repoRoot ?? payload.daemon?.repoRoot ?? null;
+      const summaryParts = [
+        payload.ok ? `Connected on 127.0.0.1:${String(port ?? "unknown")}` : "Daemon unavailable",
+        repoRoot ? `Repo: ${repoRoot}` : null,
+      ].filter((value): value is string => Boolean(value));
+
+      this.statusMessage.set(summaryParts.join(" • "));
+    } catch (error) {
+      this.status.set(null);
+      this.statusMessage.set("Daemon connecting...");
+      this.statusError.set(error instanceof Error ? error.message : "Unable to reach the daemon.");
+    }
   }
 
   async refreshRepos(): Promise<void> {
-    const payload = await readJson<{ repos: RepoRecord[] }>("/api/repos");
-    this.repos.set(payload.repos ?? []);
+    const payload = await readJson<{
+      selectedRepoId?: string | null;
+      repos?: Array<{ repoId: string; repoRoot: string }>;
+    }>("/api/repos");
+
+    this.repos.set(
+      (payload.repos ?? []).map((repo) => ({
+        id: repo.repoId,
+        path: repo.repoRoot,
+        selected: repo.repoId === (payload.selectedRepoId ?? null),
+      })),
+    );
   }
 
   async refreshVersions(): Promise<void> {
@@ -188,7 +219,7 @@ export class AppComponent implements OnInit {
   }
 
   async selectRepo(repo: RepoRecord): Promise<void> {
-    await postJson("/api/repos/select", { repoPath: repo.path });
+    await postJson("/api/repos/select", { repoRoot: repo.path });
     await this.refreshAll();
   }
 
