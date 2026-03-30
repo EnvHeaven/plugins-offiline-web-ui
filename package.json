@@ -1,0 +1,47 @@
+{
+  "name": "@envheaven/plugins-offiline-web-ui",
+  "version": "0.1.0",
+  "description": "Offline-first Angular and Tailwind UI for EnvHeaven daemon state and version registry management.",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/server/index.js",
+  "types": "dist/server/index.d.ts",
+  "bin": {
+    "envheaven-offiline-web-ui": "dist/server/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build:ui": "ng build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "npm run build:ui && npm run build:server",
+    "prepack": "npm run build",
+    "test": "tsx --test tests/**/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@angular/animations": "^21.0.0",
+    "@angular/common": "^21.0.0",
+    "@angular/compiler": "^21.0.0",
+    "@angular/core": "^21.0.0",
+    "@angular/forms": "^21.0.0",
+    "@angular/platform-browser": "^21.0.0",
+    "rxjs": "^7.8.2",
+    "zone.js": "^0.15.0"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^21.0.0",
+    "@angular/cli": "^21.0.0",
+    "@angular/compiler-cli": "^21.0.0",
+    "@types/node": "^24.6.0",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
