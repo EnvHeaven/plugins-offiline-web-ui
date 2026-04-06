@@ -24,6 +24,11 @@
                 "glob": "**/*",
                 "input": "src/web/assets",
                 "output": "assets"
+              },
+              {
+                "glob": "manifest.webmanifest",
+                "input": "src/web",
+                "output": "/"
               }
             ],
             "styles": [
@@ -33,6 +38,7 @@
           },
           "configurations": {
             "production": {
+              "baseHref": "/envheaven-ui/",
               "outputHashing": "all",
               "budgets": [
                 {

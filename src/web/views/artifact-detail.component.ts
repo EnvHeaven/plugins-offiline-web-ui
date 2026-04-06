@@ -491,10 +491,7 @@ export class ArtifactDetailComponent {
   }
 
   async incrementVersionByName(artifactName: string): Promise<void> {
-    const version = this.daemon.versions().find(v => v.artifactName === artifactName);
-    if (version) {
-      await this.incrementVersion(version);
-    }
+    await this.daemon.incrementVersionApi(artifactName);
   }
 
   async useThisRepo(): Promise<void> {
