@@ -1,5 +1,4 @@
 import { bootstrapApplication } from "@angular/platform-browser";
-import { provideAppEnvironmentInfo } from "@jovdk-web/core/environment/app-environment.token";
 import { AppComponent } from "./app.component";
 import { provideAppEnvironmentInfo } from "@jovdk-web/core/environment/app-environment.token";
 

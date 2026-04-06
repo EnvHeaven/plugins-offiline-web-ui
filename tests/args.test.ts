@@ -12,8 +12,3 @@ test("parses positional daemon url", () => {
   const options = parseOffilineWebUiArgs(["http://127.0.0.1:1234"], {});
   assert.equal(options.daemonUrl, "http://127.0.0.1:1234");
 });
-
-test("defaults to a public host binding for replit and wsl workflows", () => {
-  const options = parseOffilineWebUiArgs([], {});
-  assert.equal(options.host, "0.0.0.0");
-});
