@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
+import { WebSocket, WebSocketServer, type RawData } from "ws";
 import type { OffilineWebUiCliOptions } from "./args";
 
 export interface OffilineWebUiServerHandle {
@@ -12,6 +13,11 @@ export interface OffilineWebUiServerHandle {
 export async function startOffilineWebUiServer(options: OffilineWebUiCliOptions): Promise<OffilineWebUiServerHandle> {
   const browserDir = resolveBrowserDirectory();
   await assertBrowserBuildExists(browserDir);
+  const webSocketServer = new WebSocketServer({ noServer: true });
+
+  webSocketServer.on("connection", (browserSocket: WebSocket) => {
+    void bridgeDaemonSocket(browserSocket, options.daemonUrl);
+  });
 
   const server = http.createServer(async (request, response) => {
     try {
@@ -29,6 +35,22 @@ export async function startOffilineWebUiServer(options: OffilineWebUiCliOptions)
       await serveStaticAsset(response, browserDir, url.pathname);
     } catch (error) {
       sendText(response, 500, error instanceof Error ? error.message : "Unknown UI server error.");
+    }
+  });
+
+  server.on("upgrade", (request, socket, head) => {
+    try {
+      const url = new URL(request.url ?? "/", `http://${options.host}`);
+      if (url.pathname !== "/ws") {
+        socket.destroy();
+        return;
+      }
+
+      webSocketServer.handleUpgrade(request, socket, head, (client: WebSocket) => {
+        webSocketServer.emit("connection", client, request);
+      });
+    } catch {
+      socket.destroy();
     }
   });
 
@@ -171,4 +193,44 @@ function getContentType(filePath: string): string {
     default:
       return "application/octet-stream";
   }
+}
+
+function normalizePublicHost(host: string): string {
+  return host === "::" || host === "0.0.0.0" ? "localhost" : host;
+}
+
+async function bridgeDaemonSocket(browserSocket: WebSocket, daemonUrl: string): Promise<void> {
+  const daemonSocket = new WebSocket(new URL("/ws", daemonUrl));
+
+  browserSocket.on("message", (data: RawData, isBinary: boolean) => {
+    if (daemonSocket.readyState === WebSocket.OPEN) {
+      daemonSocket.send(data, { binary: isBinary });
+    }
+  });
+
+  daemonSocket.on("message", (data: RawData, isBinary: boolean) => {
+    if (browserSocket.readyState === WebSocket.OPEN) {
+      browserSocket.send(data, { binary: isBinary });
+    }
+  });
+
+  browserSocket.on("close", () => {
+    daemonSocket.close();
+  });
+
+  daemonSocket.on("close", () => {
+    browserSocket.close();
+  });
+
+  const closeBoth = () => {
+    if (browserSocket.readyState === WebSocket.OPEN) {
+      browserSocket.close();
+    }
+    if (daemonSocket.readyState === WebSocket.OPEN || daemonSocket.readyState === WebSocket.CONNECTING) {
+      daemonSocket.close();
+    }
+  };
+
+  browserSocket.on("error", closeBoth);
+  daemonSocket.on("error", closeBoth);
 }

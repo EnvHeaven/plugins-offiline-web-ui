@@ -19,6 +19,7 @@
     }
   },
   "include": [
+    "libs/**/*.ts",
     "src/**/*.ts",
     "tests/**/*.ts",
     "libs/**/*.ts"
