@@ -223,6 +223,14 @@ export class DaemonService {
     this.addNotification("success", "Version saved", `${version.artifactName} → ${version.nextVersion ?? "?"}`);
   }
 
+  async incrementVersionApi(artifactName: string): Promise<void> {
+    await postJson("/api/versions/increment", { artifactName });
+    await this.refreshVersions();
+    const updated = this.versions().find(v => v.artifactName === artifactName);
+    const newVer = updated?.nextVersion ?? updated?.lastVersion ?? "?";
+    this.addNotification("success", "Version incremented", `${artifactName} → ${newVer}`);
+  }
+
   incrementPatch(version: string): string {
     const parsed = version.trim().match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
     if (!parsed) return version;
