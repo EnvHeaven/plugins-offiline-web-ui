@@ -9,7 +9,7 @@ export function parseOffilineWebUiArgs(argv: string[], env: NodeJS.ProcessEnv): 
   const options: OffilineWebUiCliOptions = {
     daemonUrl: env.ENVHEAVEN_DAEMON_URL ?? env.EH_DAEMON_URL ?? "http://127.0.0.1:43123",
     port: parseOptionalPort(env.ENVHEAVEN_UI_PORT ?? env.EH_UI_PORT),
-    host: env.ENVHEAVEN_UI_HOST ?? env.EH_UI_HOST ?? "127.0.0.1",
+    host: env.ENVHEAVEN_UI_HOST ?? env.EH_UI_HOST ?? "0.0.0.0",
     open: readBoolean(env.ENVHEAVEN_UI_OPEN ?? env.EH_UI_OPEN),
   };
 

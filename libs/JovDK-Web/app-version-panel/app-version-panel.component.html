@@ -1,0 +1,21 @@
+<div class="
+    fixed
+    bg-green-500/0
+    pointer-events-none select-none
+    bottom-1
+    right-2
+    flex flex-col
+    justify-center
+    text-center
+    overflow-hidden
+    ">
+
+    <span class="text-red-400 opacity-60 text-shadow" *ngIf="!isProduction">
+        {{ environmentName }}
+    </span>
+
+    <span class="text-white opacity-35 text-shadow">
+        v{{ appVersion }}
+    </span>
+
+</div>

@@ -43,7 +43,7 @@ export async function startOffilineWebUiServer(options: OffilineWebUiCliOptions)
 
   return {
     server,
-    url: `http://${address.address === "::" || address.address === "0.0.0.0" ? "127.0.0.1" : address.address}:${String(address.port)}`,
+    url: `http://localhost:${String(address.port)}`,
     daemonUrl: options.daemonUrl,
   };
 }

@@ -1,0 +1,3 @@
+[submodule "libs/JovDK-Web"]
+	path = libs/JovDK-Web
+	url = git@github.com:joveem/JovDK-Web.git

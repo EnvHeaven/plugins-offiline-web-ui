@@ -4,6 +4,10 @@
     "outDir": "./dist/web"
   },
   "include": [
-    "src/web/**/*.ts"
+    "src/web/**/*.ts",
+    "libs/**/*.ts"
+  ],
+  "exclude": [
+    "libs/**/*.spec.ts"
   ]
 }
