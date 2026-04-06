@@ -4,6 +4,7 @@
     "outDir": "./dist/web"
   },
   "include": [
+    "libs/**/*.ts",
     "src/web/**/*.ts"
   ]
 }

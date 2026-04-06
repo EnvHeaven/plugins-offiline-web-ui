@@ -12,9 +12,15 @@
       "ES2022",
       "DOM"
     ],
-    "baseUrl": "."
+    "baseUrl": ".",
+    "paths": {
+      "@jovdk-web/*": [
+        "libs/JovDK-Web/*"
+      ]
+    }
   },
   "include": [
+    "libs/**/*.ts",
     "src/**/*.ts",
     "tests/**/*.ts"
   ]

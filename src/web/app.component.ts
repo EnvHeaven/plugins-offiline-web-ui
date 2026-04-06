@@ -1,6 +1,8 @@
 import { CommonModule } from "@angular/common";
-import { Component, OnInit, signal } from "@angular/core";
+import { Component, OnDestroy, OnInit, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
+import { AppVersionPanelComponent } from "@jovdk-web/app-version-panel/app-version-panel.component";
+import { DaemonService, type DaemonEvent } from "./services/daemon.service";
 
 interface DaemonStatus {
   ok?: boolean;
@@ -30,18 +32,25 @@ interface VersionRecord {
 @Component({
   selector: "app-root",
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, AppVersionPanelComponent],
   template: `
     <main class="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(110,231,183,0.20),_transparent_34%),linear-gradient(180deg,_#050816_0%,_#09111f_55%,_#0b1324_100%)] text-sand-100">
       <section class="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <header class="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-glow backdrop-blur">
           <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p class="text-xs uppercase tracking-[0.35em] text-moss-300/80">EnvHeaven</p>
-              <h1 class="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Offiline Web UI</h1>
-              <p class="mt-3 max-w-2xl text-sm leading-6 text-sand-200">
-                Review daemon state, choose a repo, and edit artifact versions without leaving the local machine.
-              </p>
+            <div class="flex items-start gap-4">
+              <img
+                src="assets/envheaven-logo.png"
+                alt="EnvHeaven logo"
+                class="mt-1 h-14 w-14 rounded-2xl border border-white/10 bg-white/5 object-contain p-2 shadow-glow"
+              />
+              <div>
+                <p class="text-xs uppercase tracking-[0.35em] text-moss-300/80">EnvHeaven</p>
+                <h1 class="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Offiline Web UI</h1>
+                <p class="mt-3 max-w-2xl text-sm leading-6 text-sand-200">
+                  Review daemon state, choose a repo, and edit artifact versions without leaving the local machine.
+                </p>
+              </div>
             </div>
             <div class="rounded-2xl border border-moss-400/20 bg-ink-950/70 px-4 py-3 text-sm text-sand-200">
               <div class="font-medium text-white">Daemon</div>
@@ -153,10 +162,15 @@ interface VersionRecord {
           </section>
         </div>
       </section>
+      <app-version-panel />
     </main>
   `,
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
+  private readonly daemonService = inject(DaemonService);
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private unsubscribeFromDaemon: (() => void) | null = null;
+
   readonly status = signal<DaemonStatus | null>(null);
   readonly statusMessage = signal("Daemon connecting...");
   readonly statusError = signal<string | null>(null);
@@ -170,7 +184,22 @@ export class AppComponent implements OnInit {
   ];
 
   async ngOnInit(): Promise<void> {
+    this.unsubscribeFromDaemon = this.daemonService.subscribe((event) => {
+      void this.handleDaemonEvent(event);
+    });
+    this.refreshTimer = setInterval(() => {
+      void this.refreshAll();
+    }, 10_000);
     await this.refreshAll();
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+    this.unsubscribeFromDaemon?.();
+    this.unsubscribeFromDaemon = null;
   }
 
   async refreshAll(): Promise<void> {
@@ -186,11 +215,11 @@ export class AppComponent implements OnInit {
       const port = payload.daemon?.port;
       const repoRoot = payload.selectedRepo?.repoRoot ?? payload.daemon?.repoRoot ?? null;
       const summaryParts = [
-        payload.ok ? `Connected on 127.0.0.1:${String(port ?? "unknown")}` : "Daemon unavailable",
+        payload.ok ? `Connected on localhost:${String(port ?? "unknown")}` : "Daemon unavailable",
         repoRoot ? `Repo: ${repoRoot}` : null,
       ].filter((value): value is string => Boolean(value));
 
-      this.statusMessage.set(summaryParts.join(" • "));
+      this.statusMessage.set(summaryParts.join(" | "));
     } catch (error) {
       this.status.set(null);
       this.statusMessage.set("Daemon connecting...");
@@ -235,6 +264,17 @@ export class AppComponent implements OnInit {
     const nextVersion = incrementPatch(version.nextVersion ?? version.lastVersion ?? "0.1.0");
     version.nextVersion = nextVersion;
     await this.saveVersion(version);
+  }
+
+  private async handleDaemonEvent(event: DaemonEvent): Promise<void> {
+    if (event.type === "repo:selected") {
+      await this.refreshAll();
+      return;
+    }
+
+    if (event.type === "version:set" || event.type === "version:incremented") {
+      await this.refreshVersions();
+    }
   }
 }
 
