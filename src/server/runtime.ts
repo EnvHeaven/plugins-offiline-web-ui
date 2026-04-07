@@ -13,6 +13,8 @@ export async function startOffilineWebUiServer(options: OffilineWebUiCliOptions)
   const browserDir = resolveBrowserDirectory();
   await assertBrowserBuildExists(browserDir);
 
+  const basePath = await readBaseHref(browserDir);
+
   const server = http.createServer(async (request, response) => {
     try {
       if (!request.url) {
@@ -21,12 +23,14 @@ export async function startOffilineWebUiServer(options: OffilineWebUiCliOptions)
       }
 
       const url = new URL(request.url, `http://${options.host}`);
-      if (url.pathname.startsWith("/api/")) {
-        await proxyDaemonRequest(request, response, options.daemonUrl, url);
+      const strippedPathname = stripBasePath(url.pathname, basePath);
+
+      if (strippedPathname.startsWith("/api/")) {
+        await proxyDaemonRequest(request, response, options.daemonUrl, url, strippedPathname);
         return;
       }
 
-      await serveStaticAsset(response, browserDir, url.pathname);
+      await serveStaticAsset(response, browserDir, strippedPathname);
     } catch (error) {
       sendText(response, 500, error instanceof Error ? error.message : "Unknown UI server error.");
     }
@@ -46,6 +50,38 @@ export async function startOffilineWebUiServer(options: OffilineWebUiCliOptions)
     url: `http://localhost:${String(address.port)}`,
     daemonUrl: options.daemonUrl,
   };
+}
+
+/**
+ * Read <base href="..."> from index.html.
+ * Returns a normalised prefix WITHOUT trailing slash, e.g. "/envheaven-ui".
+ * Returns "" when base href is "/" or absent.
+ */
+async function readBaseHref(browserDir: string): Promise<string> {
+  try {
+    const indexHtml = await fs.readFile(path.join(browserDir, "index.html"), "utf8");
+    const match = /<base\s+href="([^"]+)"/i.exec(indexHtml);
+    if (!match) return "";
+    const href = match[1];
+    if (!href || href === "/") return "";
+    return href.replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Strip the basePath prefix from a pathname so the server can resolve
+ * files relative to dist/browser root regardless of <base href>.
+ *
+ * e.g. basePath="/envheaven-ui", pathname="/envheaven-ui/main.js" → "/main.js"
+ *      basePath="/envheaven-ui", pathname="/"                     → "/"
+ */
+function stripBasePath(pathname: string, basePath: string): string {
+  if (!basePath) return pathname;
+  if (pathname === basePath || pathname === basePath + "/") return "/";
+  if (pathname.startsWith(basePath + "/")) return pathname.slice(basePath.length);
+  return pathname;
 }
 
 async function serveStaticAsset(response: http.ServerResponse, browserDir: string, pathname: string): Promise<void> {
@@ -84,8 +120,9 @@ async function proxyDaemonRequest(
   response: http.ServerResponse,
   daemonUrl: string,
   url: URL,
+  strippedPathname: string,
 ): Promise<void> {
-  const target = new URL(url.pathname + url.search, daemonUrl);
+  const target = new URL(strippedPathname + url.search, daemonUrl);
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await readRequestBody(request);
   const proxiedResponse = await fetch(target, {
     method: request.method ?? "GET",
@@ -160,6 +197,8 @@ function getContentType(filePath: string): string {
       return "text/javascript; charset=utf-8";
     case ".json":
       return "application/json; charset=utf-8";
+    case ".webmanifest":
+      return "application/manifest+json";
     case ".svg":
       return "image/svg+xml";
     case ".png":
