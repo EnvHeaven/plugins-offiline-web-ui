@@ -1,6 +1,6 @@
 {
   "name": "@envheaven/plugins-offiline-web-ui",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Offline-first Angular and Tailwind UI for EnvHeaven daemon state and version registry management.",
   "license": "MIT",
   "type": "commonjs",
