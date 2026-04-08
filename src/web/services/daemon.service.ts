@@ -52,6 +52,12 @@ export interface ActionHelper {
   value: string;
 }
 
+export interface ActionVariant {
+  id: string;
+  label: string;
+  env?: Record<string, string>;
+}
+
 export interface ActionDefinition {
   id: string;
   label: string;
@@ -63,6 +69,7 @@ export interface ActionDefinition {
   stopLabel: string;
   successHelpers: ActionHelper[];
   failHelpers: ActionHelper[];
+  variants?: ActionVariant[];
 }
 
 export interface ConsoleLogEntry {
@@ -281,9 +288,16 @@ export class DaemonService {
     await this.refreshRepos();
   }
 
-  async dispatchAction(actionId: string, background = false): Promise<string | null> {
+  async dispatchAction(
+    actionId: string,
+    options: { background?: boolean; variantId?: string } = {}
+  ): Promise<string | null> {
     try {
-      const payload = await postJsonRead<{ runId: string }>("/api/actions/dispatch", { actionId, background });
+      const payload = await postJsonRead<{ runId: string }>("/api/actions/dispatch", {
+        actionId,
+        background: options.background ?? false,
+        ...(options.variantId ? { variantId: options.variantId } : {}),
+      });
       return payload.runId;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to dispatch action.";

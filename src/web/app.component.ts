@@ -5,7 +5,6 @@ import { HomeComponent } from "./views/home.component";
 import { ArtifactsListComponent } from "./views/artifacts-list.component";
 import { ArtifactDetailComponent } from "./views/artifact-detail.component";
 import { SettingsComponent } from "./views/settings.component";
-import { AppVersionPanelComponent } from "@jovdk-web/app-version-panel/app-version-panel.component";
 
 @Component({
   selector: "app-root",
@@ -15,7 +14,6 @@ import { AppVersionPanelComponent } from "@jovdk-web/app-version-panel/app-versi
     ArtifactsListComponent,
     ArtifactDetailComponent,
     SettingsComponent,
-    AppVersionPanelComponent,
   ],
   template: `
     <div class="flex h-screen w-screen overflow-hidden bg-bg-base text-tx-primary select-none">
@@ -252,8 +250,6 @@ import { AppVersionPanelComponent } from "@jovdk-web/app-version-panel/app-versi
         </main>
       </div>
 
-      <!-- Version panel overlay (fixed bottom-right) -->
-      <app-version-panel></app-version-panel>
     </div>
   `,
 })

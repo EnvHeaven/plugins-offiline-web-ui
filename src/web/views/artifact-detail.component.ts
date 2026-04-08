@@ -3,6 +3,7 @@ import { FormsModule } from "@angular/forms";
 import {
   DaemonService,
   ActionDefinition,
+  ActionVariant,
   ActionHelper,
   ArtifactMeta,
 } from "../services/daemon.service";
@@ -489,23 +490,38 @@ const ICON_PATHS: Record<string, string> = {
                     }
                   }
 
+                  <!-- Variant selector (if action has variants) -->
+                  @if ((action.variants ?? []).length > 0) {
+                    <div class="px-4 pb-2">
+                      <label class="block text-[10px] text-tx-muted mb-1">Variant</label>
+                      <select class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                              [ngModel]="getSelectedVariant(action.id)"
+                              (ngModelChange)="setSelectedVariant(action.id, $event)">
+                        <option value="">(default)</option>
+                        @for (variant of action.variants ?? []; track variant.id) {
+                          <option [value]="variant.id">{{ variant.label }}</option>
+                        }
+                      </select>
+                    </div>
+                  }
+
                   <!-- Run type selector + Run button row -->
                   <div class="px-4 pb-4">
                     <div class="flex gap-2 items-center">
-                      <!-- Run type selector -->
+                      <!-- Run type selector (stream vs background) -->
                       <div class="flex rounded border border-border-default overflow-hidden text-[10px] flex-shrink-0">
                         <button class="px-2 py-1.5 transition-colors"
                                 [class]="getRunMode(action.id) === 'stream'
                                   ? 'bg-bg-overlay text-tx-primary font-medium'
                                   : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
-                                title="Stream output live in the card"
+                                title="Stream output live in this card"
                                 (click)="setRunMode(action.id, 'stream')">Stream</button>
                         <span class="border-l border-border-default"></span>
                         <button class="px-2 py-1.5 transition-colors"
                                 [class]="getRunMode(action.id) === 'background'
                                   ? 'bg-bg-overlay text-tx-primary font-medium'
                                   : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
-                                title="Launch non-blocking in the background"
+                                title="Launch non-blocking in the background (no streaming)"
                                 (click)="setRunMode(action.id, 'background')">BG</button>
                       </div>
 
@@ -784,7 +800,7 @@ const ICON_PATHS: Record<string, string> = {
             <div class="mb-3 flex-shrink-0">
               <select class="w-full bg-bg-surface border border-border-default rounded px-3 py-2 text-xs text-tx-primary focus:border-accent outline-none"
                       [ngModel]="selectedConsoleSource()"
-                      (ngModelChange)="selectedConsoleSource.set($event)">
+                      (ngModelChange)="switchConsoleSource($event)">
                 <option value="daemon">Daemon — notifications &amp; events</option>
                 @for (group of consoleSourceGroups(); track group.actionId) {
                   <optgroup [label]="group.actionLabel + ' (' + group.runs.length + (group.runs.length === 1 ? ' run' : ' runs') + ')'">
@@ -888,6 +904,9 @@ export class ArtifactDetailComponent {
   // Run mode per action (stream vs background)
   readonly runModes = signal<Record<string, RunMode>>({});
 
+  // Selected variant per action (empty string = default)
+  readonly selectedVariants = signal<Record<string, string>>({});
+
   // Metadata editing
   readonly metaEditing = signal(false);
   readonly metaDraft = signal<ArtifactMeta>({});
@@ -896,6 +915,9 @@ export class ArtifactDetailComponent {
   readonly selectedConsoleSource = signal<string>("daemon");
   readonly showEndedInstances = signal(false);
   readonly clearedSources = signal<Set<string>>(new Set());
+
+  // Stored scroll positions per console source for independent restoration
+  private readonly sourceScrollPositions = new Map<string, number>();
 
   // Groups action runs by action ID for optgroup dropdown
   readonly consoleSourceGroups = computed((): ConsoleSourceGroup[] => {
@@ -952,8 +974,11 @@ export class ArtifactDetailComponent {
   });
 
   constructor() {
+    // Auto-scroll to bottom only when the selected source is live (streaming)
     effect(() => {
-      this.activeConsoleLogs();
+      const logs = this.activeConsoleLogs();
+      if (!this.isActiveSourceLive()) return;
+      if (logs.length === 0) return;
       const el = this.logPane()?.nativeElement as HTMLElement | undefined;
       if (el) {
         setTimeout(() => {
@@ -976,6 +1001,36 @@ export class ArtifactDetailComponent {
 
   setRunMode(actionId: string, mode: RunMode): void {
     this.runModes.update((m) => ({ ...m, [actionId]: mode }));
+  }
+
+  // ── Variant selector ─────────────────────────────────────────────────
+  getSelectedVariant(actionId: string): string {
+    return this.selectedVariants()[actionId] ?? "";
+  }
+
+  setSelectedVariant(actionId: string, variantId: string): void {
+    this.selectedVariants.update((v) => ({ ...v, [actionId]: variantId }));
+  }
+
+  // ── Dev Tools: switch console source with per-source scroll restore ──
+  switchConsoleSource(sourceId: string): void {
+    // Save current scroll position for the current source
+    const el = this.logPane()?.nativeElement as HTMLElement | undefined;
+    if (el) {
+      this.sourceScrollPositions.set(this.selectedConsoleSource(), el.scrollTop);
+    }
+    this.selectedConsoleSource.set(sourceId);
+    // Restore or scroll-to-bottom for the incoming source
+    setTimeout(() => {
+      const newEl = this.logPane()?.nativeElement as HTMLElement | undefined;
+      if (!newEl) return;
+      const saved = this.sourceScrollPositions.get(sourceId);
+      if (saved !== undefined) {
+        newEl.scrollTop = saved;
+      } else {
+        newEl.scrollTop = newEl.scrollHeight;
+      }
+    }, 0);
   }
 
   // ── Repo helpers ─────────────────────────────────────────────────────
@@ -1038,10 +1093,13 @@ export class ArtifactDetailComponent {
     if (!action) return;
     const mode = this.getRunMode(actionId);
     const background = mode === "background";
-    const runId = await this.daemon.dispatchAction(actionId, background);
+    const variantId = this.getSelectedVariant(actionId) || undefined;
+    const runId = await this.daemon.dispatchAction(actionId, { background, variantId });
     if (runId) {
       if (!background) {
         this.daemon.streamAction(runId, actionId, action.label);
+        // Switch to the new run's source, resetting its scroll to bottom
+        this.sourceScrollPositions.delete(runId);
         this.selectedConsoleSource.set(runId);
       } else {
         this.daemon.addNotification("info", "Launched in background", `Action '${action.label}' is running in background (non-blocking).`);
