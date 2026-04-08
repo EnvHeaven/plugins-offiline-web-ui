@@ -1,4 +1,5 @@
 import { Component, inject, signal, computed, OnInit, OnDestroy } from "@angular/core";
+import { environment } from "./environments/environment";
 import { DaemonService } from "./services/daemon.service";
 import { NavService, ViewId } from "./services/nav.service";
 import { HomeComponent } from "./views/home.component";
@@ -80,7 +81,8 @@ import { SettingsComponent } from "./views/settings.component";
               @if (daemon.status()?.daemon?.port) {
                 <div class="text-[10px] text-tx-muted font-mono">localhost:{{ daemon.status()?.daemon?.port }}</div>
               }
-              <div class="text-[10px] text-tx-disabled font-mono">UI v{{ uiVersion }} · Daemon v{{ daemon.daemonVersion() ?? '–' }}</div>
+              <div class="text-[10px] text-tx-disabled font-mono">UI v{{ uiVersion }}</div>
+              <div class="text-[10px] text-tx-disabled font-mono">Daemon v{{ daemon.daemonVersion() ?? '–' }}</div>
             </div>
             <button class="w-5 h-5 flex items-center justify-center text-tx-muted hover:text-tx-secondary transition-colors flex-shrink-0"
                     title="Refresh"
@@ -255,7 +257,7 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly daemon = inject(DaemonService);
   readonly nav = inject(NavService);
 
-  readonly uiVersion = '0.1.0';
+  readonly uiVersion = environment.uiVersion;
 
   readonly showContextDropdown = signal(false);
   readonly showNotifications = signal(false);
