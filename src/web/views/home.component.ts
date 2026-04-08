@@ -90,7 +90,8 @@ import { NavService } from "../services/nav.service";
                     <div class="flex items-center gap-2">
                       <span class="text-sm font-medium text-tx-primary truncate">{{ repo.name }}</span>
                       @if (repo.selected) {
-                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-dim text-accent-light border border-accent-border uppercase tracking-wide flex-shrink-0">Active</span>
+                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-dim text-accent-light border border-accent-border uppercase tracking-wide flex-shrink-0 cursor-help"
+                              title="This is the active EnvHeaven context.">Selected</span>
                       }
                     </div>
                     <div class="text-xs text-tx-muted font-mono truncate mt-0.5">{{ repo.path }}</div>
