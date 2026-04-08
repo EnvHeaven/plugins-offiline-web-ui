@@ -1,11 +1,23 @@
 # EnvHeaven Offline Web UI — Agent Conventions
 
-## Angular component generation
+## Angular component / artifact generation
 
-All Angular components in this package **must** use separate template and style files.
-Never use `template:` or `styles:` inline in `@Component`.
+**All Angular artifacts (components, services, pipes, directives) must be created
+with `ng generate`.  Never hand-write a new artifact file.**
 
-Always use:
+```bash
+# From the package root (envheaven-pkg-plugin-offiline-web-ui-01/)
+npx ng generate component views/my-view
+npx ng generate service  services/my-service
+npx ng generate pipe     pipes/my-pipe
+npx ng generate directive directives/my-directive
+```
+
+## No inline templates or styles
+
+`template:` and `styles:` inside `@Component` are **forbidden**.
+Every component must use separate files:
+
 ```ts
 @Component({
   templateUrl: './my-component.component.html',
@@ -13,10 +25,8 @@ Always use:
 })
 ```
 
-When creating a new component, generate three files together:
-- `my-component.component.ts`
-- `my-component.component.html`
-- `my-component.component.css`
+This applies to **all** Angular source under this package, including files in
+`libs/`.
 
 ## Build
 
@@ -25,8 +35,8 @@ cd artifacts/envheaven-eh-env-eh-pkg-01/artifacts/envheaven-pkg-plugin-offiline-
 pnpm run build
 ```
 
-`build` runs `gen-env` (generates `src/web/environments/environment.ts` from `package.json`)
-then `ng build` then `tsc`.
+`build` runs `gen-env` (generates `src/web/environments/environment.ts` from
+`package.json`), then `ng build`, then `tsc`.
 
 ## Git sync
 
