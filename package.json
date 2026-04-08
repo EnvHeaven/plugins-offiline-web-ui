@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "gen-env": "node scripts/gen-environment.mjs",
-    "build:ui": "npm run gen-env && ng build",
+    "build:ui": "npm run gen-env && NG_CLI_ANALYTICS=false ng build",
     "build:server": "tsc -p tsconfig.server.json",
     "build": "npm run build:ui && npm run build:server",
     "prepack": "npm run build",
