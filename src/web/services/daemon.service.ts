@@ -375,6 +375,26 @@ export class DaemonService {
     };
   }
 
+  registerBackgroundRun(runId: string, actionId: string, actionLabel: string): void {
+    const entry: ActionRunEntry = {
+      runId,
+      actionId,
+      actionLabel,
+      status: "running",
+      exitCode: null,
+      startedAt: new Date(),
+      helpers: [],
+      logs: [
+        {
+          ts: new Date().toISOString(),
+          stream: "system",
+          text: "[background] Process launched in background (non-blocking). Output not streamed.",
+        },
+      ],
+    };
+    this.actionRuns.update((runs) => [entry, ...runs]);
+  }
+
   async stopAction(runId: string): Promise<void> {
     try {
       await postJson(`/api/actions/stop/${runId}`, {});
