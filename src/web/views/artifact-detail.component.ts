@@ -421,12 +421,17 @@ const ICON_PATHS: Record<string, string> = {
                       </div>
                     }
 
-                    <!-- Running (started OK) — success = process is now running -->
+                    <!-- Succeeded — process completed OK -->
                     @if (run.status === 'success') {
                       <div class="mx-4 mb-3 rounded-md bg-accent-dim border border-accent-border px-3 py-2">
                         <div class="flex items-center gap-2 text-xs text-accent-light mb-1.5">
-                          <span class="w-2 h-2 rounded-full bg-accent-light status-pulse flex-shrink-0"></span>
-                          Running
+                          <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="20,6 9,17 4,12"/>
+                          </svg>
+                          Succeeded
+                          @if (run.exitCode !== null) {
+                            <span class="text-accent/60">(exit {{ run.exitCode }})</span>
+                          }
                         </div>
                         @if (run.helpers.length > 0) {
                           <div class="flex flex-wrap gap-1.5 mt-1">
@@ -525,7 +530,7 @@ const ICON_PATHS: Record<string, string> = {
 
                       <!-- Run button -->
                       <button class="flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-colors border border-border-default bg-bg-raised text-tx-secondary hover:text-tx-primary hover:border-border-strong disabled:opacity-50 disabled:cursor-not-allowed"
-                              [disabled]="latestRunForAction(action.id)?.status === 'running' || latestRunForAction(action.id)?.status === 'success'"
+                              [disabled]="latestRunForAction(action.id)?.status === 'running'"
                               (click)="runAction(action.id)">
                         @if (latestRunForAction(action.id)?.status === 'running') {
                           <div class="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
@@ -783,7 +788,7 @@ const ICON_PATHS: Record<string, string> = {
                 <p class="text-xs text-tx-muted mt-0.5">Console output per source — daemon events or action run streams.</p>
               </div>
               <div class="flex-1"></div>
-              <label class="flex items-center gap-1.5 text-xs text-tx-muted cursor-pointer select-none">
+              <label class="flex items-center gap-1.5 text-xs text-tx-muted cursor-pointer">
                 <input type="checkbox"
                        class="rounded border-border-default accent-accent"
                        [ngModel]="showEndedInstances()"
@@ -928,8 +933,7 @@ export class ArtifactDetailComponent {
       if (!map.has(r.actionId)) {
         map.set(r.actionId, { actionId: r.actionId, actionLabel: r.actionLabel, runs: [] });
       }
-      // success = process started OK and is still running; only error/stopped are truly ended
-      map.get(r.actionId)!.runs.push({ id: r.runId, ts: r.startedAt, isEnded: r.status === "error" || r.status === "stopped" });
+      map.get(r.actionId)!.runs.push({ id: r.runId, ts: r.startedAt, isEnded: r.status !== "running" });
     }
     return Array.from(map.values());
   });
@@ -951,8 +955,7 @@ export class ArtifactDetailComponent {
     const showEnded = this.showEndedInstances();
     const run = this.daemon.actionRuns().find((r) => r.runId === source);
     if (!run || cleared.has(source)) return [];
-    // success = process is running; only error/stopped are truly ended
-    const isEnded = run.status === "error" || run.status === "stopped";
+    const isEnded = run.status !== "running";
     if (!showEnded && isEnded) return [];
     return run.logs.map((l) => ({
       ts: l.ts.slice(11, 19),
@@ -973,8 +976,7 @@ export class ArtifactDetailComponent {
     const source = this.selectedConsoleSource();
     if (source === "daemon") return this.daemon.isConnected();
     const run = this.daemon.actionRuns().find((r) => r.runId === source);
-    // success = process is now running (started OK); treat same as "running" for scroll/live purposes
-    return run?.status === "running" || run?.status === "success";
+    return run?.status === "running";
   });
 
   constructor() {
@@ -994,7 +996,7 @@ export class ArtifactDetailComponent {
 
   // ── Icon helper ──────────────────────────────────────────────────────
   getIcon(name: string): string {
-    const paths = ICON_PATHS[name ?? "play"] ?? ICON_PATHS["play"];
+    const paths = ICON_PATHS[name || "play"] ?? ICON_PATHS["play"];
     return `<svg class="w-4 h-4 text-tx-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">${paths}</svg>`;
   }
 

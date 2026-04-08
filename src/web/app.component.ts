@@ -16,7 +16,7 @@ import { SettingsComponent } from "./views/settings.component";
     SettingsComponent,
   ],
   template: `
-    <div class="flex h-screen w-screen overflow-hidden bg-bg-base text-tx-primary select-none">
+    <div class="flex h-screen w-screen overflow-hidden bg-bg-base text-tx-primary">
 
       <!-- ══ SIDEBAR ══════════════════════════════════════════ -->
       <aside class="flex flex-col w-[220px] flex-shrink-0 bg-bg-surface border-r border-border-subtle">
@@ -80,7 +80,7 @@ import { SettingsComponent } from "./views/settings.component";
               @if (daemon.status()?.daemon?.port) {
                 <div class="text-[10px] text-tx-muted font-mono">localhost:{{ daemon.status()?.daemon?.port }}</div>
               }
-              <div class="text-[10px] text-tx-disabled font-mono">v{{ daemon.daemonVersion() ?? '–' }}</div>
+              <div class="text-[10px] text-tx-disabled font-mono">UI v{{ uiVersion }} · Daemon v{{ daemon.daemonVersion() ?? '–' }}</div>
             </div>
             <button class="w-5 h-5 flex items-center justify-center text-tx-muted hover:text-tx-secondary transition-colors flex-shrink-0"
                     title="Refresh"
@@ -254,6 +254,8 @@ import { SettingsComponent } from "./views/settings.component";
 export class AppComponent implements OnInit, OnDestroy {
   readonly daemon = inject(DaemonService);
   readonly nav = inject(NavService);
+
+  readonly uiVersion = '0.1.0';
 
   readonly showContextDropdown = signal(false);
   readonly showNotifications = signal(false);
