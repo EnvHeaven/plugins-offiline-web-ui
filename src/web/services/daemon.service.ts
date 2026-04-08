@@ -2,6 +2,7 @@ import { Injectable, signal, computed } from "@angular/core";
 
 export interface DaemonStatus {
   ok?: boolean;
+  version?: string;
   daemon?: {
     port?: number;
     repoRoot?: string | null;
@@ -12,6 +13,13 @@ export interface DaemonStatus {
   } | null;
 }
 
+export interface ArtifactMeta {
+  icon?: string;
+  internalName?: string;
+  labelName?: string;
+  instanceLabelName?: string;
+}
+
 export interface RepoRecord {
   id: string;
   path: string;
@@ -19,6 +27,7 @@ export interface RepoRecord {
   selected: boolean;
   lastSeen?: string;
   type?: string;
+  meta?: ArtifactMeta;
 }
 
 export interface VersionRecord {
@@ -37,17 +46,56 @@ export interface AppNotification {
   read: boolean;
 }
 
+export interface ActionHelper {
+  kind: "open-url" | "copy-text";
+  label: string;
+  value: string;
+}
+
+export interface ActionDefinition {
+  id: string;
+  label: string;
+  description: string;
+  icon: string;
+  runCommand: string;
+  stopCommand: string | null;
+  runLabel: string;
+  stopLabel: string;
+  successHelpers: ActionHelper[];
+  failHelpers: ActionHelper[];
+}
+
+export interface ConsoleLogEntry {
+  ts: string;
+  stream: "stdout" | "stderr" | "system";
+  text: string;
+}
+
+export interface ActionRunEntry {
+  runId: string;
+  actionId: string;
+  actionLabel: string;
+  status: "running" | "success" | "error" | "stopped";
+  exitCode: number | null;
+  startedAt: Date;
+  helpers: ActionHelper[];
+  logs: ConsoleLogEntry[];
+}
+
 @Injectable({ providedIn: "root" })
 export class DaemonService {
   readonly status = signal<DaemonStatus | null>(null);
   readonly repos = signal<RepoRecord[]>([]);
   readonly versions = signal<VersionRecord[]>([]);
+  readonly actions = signal<ActionDefinition[]>([]);
+  readonly actionRuns = signal<ActionRunEntry[]>([]);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly notifications = signal<AppNotification[]>([]);
   readonly lastRefreshed = signal<Date | null>(null);
 
   readonly isConnected = computed(() => this.status()?.ok === true);
+  readonly daemonVersion = computed(() => this.status()?.version ?? null);
   readonly selectedRepo = computed(() =>
     this.repos().find((r) => r.selected) ?? null
   );
@@ -86,7 +134,6 @@ export class DaemonService {
     }
 
     const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-    // Build the WebSocket URL respecting the base path (e.g. /envheaven-ui)
     const segments = location.pathname.split("/").filter(Boolean);
     const pathBase = segments.length > 0 ? `/${segments[0]}` : "";
     const wsUrl = `${wsProtocol}//${location.host}${pathBase}/ws`;
@@ -143,12 +190,21 @@ export class DaemonService {
       await this.refreshVersions();
     } else if (type === "version:incremented") {
       await this.refreshVersions();
+    } else if (type === "actions:updated") {
+      await this.refreshActions();
+    } else if (type === "action:complete") {
+      const p = payload as { actionId?: string; status?: string } | null;
+      if (p?.status === "success") {
+        this.addNotification("success", "Action complete", `Action '${p.actionId ?? ""}' finished successfully.`);
+      } else if (p?.status === "error") {
+        this.addNotification("warn", "Action failed", `Action '${p.actionId ?? ""}' exited with an error.`);
+      }
     }
   }
 
   async refreshAll(): Promise<void> {
     this.loading.set(true);
-    await Promise.all([this.refreshStatus(), this.refreshRepos(), this.refreshVersions()]);
+    await Promise.all([this.refreshStatus(), this.refreshRepos(), this.refreshVersions(), this.refreshActions()]);
     this.loading.set(false);
     this.lastRefreshed.set(new Date());
   }
@@ -177,7 +233,7 @@ export class DaemonService {
     try {
       const payload = await readJson<{
         selectedRepoId?: string | null;
-        repos?: Array<{ repoId: string; repoRoot: string }>;
+        repos?: Array<{ repoId: string; repoRoot: string; meta?: ArtifactMeta }>;
       }>("/api/repos");
 
       this.repos.set(
@@ -188,10 +244,11 @@ export class DaemonService {
           selected: repo.repoId === (payload.selectedRepoId ?? null),
           lastSeen: "recently",
           type: "env-repo",
+          meta: repo.meta,
         }))
       );
     } catch {
-      // silently ignore — status covers connectivity
+      // silently ignore
     }
   }
 
@@ -204,10 +261,118 @@ export class DaemonService {
     }
   }
 
+  async refreshActions(): Promise<void> {
+    try {
+      const payload = await readJson<{ actions: ActionDefinition[] }>("/api/actions");
+      this.actions.set(payload.actions ?? []);
+    } catch {
+      // silently ignore
+    }
+  }
+
   async selectRepo(repo: RepoRecord): Promise<void> {
     await postJson("/api/repos/select", { repoRoot: repo.path });
     await this.refreshAll();
     this.addNotification("info", "Context switched", `Now using ${repo.name}`);
+  }
+
+  async putRepoMeta(meta: ArtifactMeta): Promise<void> {
+    await putJson("/api/repos/meta", meta);
+    await this.refreshRepos();
+  }
+
+  async dispatchAction(actionId: string): Promise<string | null> {
+    try {
+      const payload = await postJsonRead<{ runId: string }>("/api/actions/dispatch", { actionId });
+      return payload.runId;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to dispatch action.";
+      this.addNotification("error", "Action dispatch failed", msg);
+      return null;
+    }
+  }
+
+  streamAction(runId: string, actionId: string, actionLabel: string): void {
+    const entry: ActionRunEntry = {
+      runId,
+      actionId,
+      actionLabel,
+      status: "running",
+      exitCode: null,
+      startedAt: new Date(),
+      helpers: [],
+      logs: [],
+    };
+    this.actionRuns.update((runs) => [entry, ...runs]);
+
+    const es = new EventSource(`/api/actions/stream/${runId}`);
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data as string) as {
+          type: string;
+          stream?: string;
+          data?: string;
+          exitCode?: number;
+          status?: string;
+          helpers?: ActionHelper[];
+        };
+
+        if (data.type === "line" && data.stream && data.data) {
+          const logEntry: ConsoleLogEntry = {
+            ts: new Date().toISOString(),
+            stream: (data.stream as ConsoleLogEntry["stream"]) ?? "system",
+            text: data.data,
+          };
+          this.actionRuns.update((runs) =>
+            runs.map((r) =>
+              r.runId === runId ? { ...r, logs: [...r.logs, logEntry] } : r
+            )
+          );
+        } else if (data.type === "result") {
+          this.actionRuns.update((runs) =>
+            runs.map((r) =>
+              r.runId === runId
+                ? {
+                    ...r,
+                    status: (data.status as ActionRunEntry["status"]) ?? "error",
+                    exitCode: data.exitCode ?? -1,
+                    helpers: data.helpers ?? [],
+                  }
+                : r
+            )
+          );
+          es.close();
+        }
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      this.actionRuns.update((runs) =>
+        runs.map((r) =>
+          r.runId === runId && r.status === "running"
+            ? { ...r, status: "error" as const, exitCode: -1 }
+            : r
+        )
+      );
+    };
+  }
+
+  async stopAction(runId: string): Promise<void> {
+    try {
+      await postJson(`/api/actions/stop/${runId}`, {});
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to stop action.";
+      this.addNotification("error", "Stop failed", msg);
+    }
+  }
+
+  async putActionConfig(action: ActionDefinition): Promise<void> {
+    await putJson("/api/actions/config", action);
+    await this.refreshActions();
   }
 
   async saveVersion(version: VersionRecord): Promise<void> {
@@ -249,7 +414,7 @@ export class DaemonService {
       ts: new Date(),
       read: false,
     };
-    this.notifications.update((ns) => [n, ...ns].slice(0, 20));
+    this.notifications.update((ns) => [n, ...ns].slice(0, 50));
   }
 
   markAllRead(): void {
@@ -285,6 +450,29 @@ async function readJson<T>(url: string): Promise<T> {
 async function postJson(url: string, body: unknown): Promise<void> {
   const response = await fetch(url, {
     method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} for ${url}`);
+  }
+}
+
+async function postJsonRead<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} for ${url}`);
+  }
+  return (await response.json()) as T;
+}
+
+async function putJson(url: string, body: unknown): Promise<void> {
+  const response = await fetch(url, {
+    method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
