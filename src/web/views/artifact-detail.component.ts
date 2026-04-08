@@ -559,10 +559,13 @@ const ICON_PATHS: Record<string, string> = {
                         </div>
                         <div>
                           <label class="block text-[10px] text-tx-muted mb-1">Icon</label>
-                          <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
-                                 [ngModel]="editDraft()?.icon ?? ''"
-                                 (ngModelChange)="updateDraft('icon', $event)"
-                                 placeholder="play, build, deploy, test…" />
+                          <select class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                                  [ngModel]="editDraft()?.icon || 'play'"
+                                  (ngModelChange)="updateDraft('icon', $event)">
+                            @for (iconKey of iconOptions; track iconKey) {
+                              <option [value]="iconKey">{{ iconKey }}</option>
+                            }
+                          </select>
                         </div>
                       </div>
 
@@ -866,6 +869,8 @@ export class ArtifactDetailComponent {
   readonly nav = inject(NavService);
 
   readonly logPane = viewChild<ElementRef>("logPane");
+
+  readonly iconOptions: string[] = Object.keys(ICON_PATHS);
 
   readonly tabs: { id: DetailTab; label: string }[] = [
     { id: "overview", label: "Overview" },
