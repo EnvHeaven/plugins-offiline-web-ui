@@ -421,14 +421,12 @@ const ICON_PATHS: Record<string, string> = {
                       </div>
                     }
 
-                    <!-- Succeeded -->
+                    <!-- Running (started OK) — success = process is now running -->
                     @if (run.status === 'success') {
                       <div class="mx-4 mb-3 rounded-md bg-accent-dim border border-accent-border px-3 py-2">
-                        <div class="flex items-center gap-1.5 text-xs text-accent-light mb-1.5">
-                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                            <polyline points="20,6 9,17 4,12"/>
-                          </svg>
-                          Succeeded
+                        <div class="flex items-center gap-2 text-xs text-accent-light mb-1.5">
+                          <span class="w-2 h-2 rounded-full bg-accent-light status-pulse flex-shrink-0"></span>
+                          Running
                         </div>
                         @if (run.helpers.length > 0) {
                           <div class="flex flex-wrap gap-1.5 mt-1">
@@ -527,7 +525,7 @@ const ICON_PATHS: Record<string, string> = {
 
                       <!-- Run button -->
                       <button class="flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-colors border border-border-default bg-bg-raised text-tx-secondary hover:text-tx-primary hover:border-border-strong disabled:opacity-50 disabled:cursor-not-allowed"
-                              [disabled]="latestRunForAction(action.id)?.status === 'running'"
+                              [disabled]="latestRunForAction(action.id)?.status === 'running' || latestRunForAction(action.id)?.status === 'success'"
                               (click)="runAction(action.id)">
                         @if (latestRunForAction(action.id)?.status === 'running') {
                           <div class="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
@@ -930,7 +928,8 @@ export class ArtifactDetailComponent {
       if (!map.has(r.actionId)) {
         map.set(r.actionId, { actionId: r.actionId, actionLabel: r.actionLabel, runs: [] });
       }
-      map.get(r.actionId)!.runs.push({ id: r.runId, ts: r.startedAt, isEnded: r.status !== "running" });
+      // success = process started OK and is still running; only error/stopped are truly ended
+      map.get(r.actionId)!.runs.push({ id: r.runId, ts: r.startedAt, isEnded: r.status === "error" || r.status === "stopped" });
     }
     return Array.from(map.values());
   });
@@ -952,8 +951,9 @@ export class ArtifactDetailComponent {
     const showEnded = this.showEndedInstances();
     const run = this.daemon.actionRuns().find((r) => r.runId === source);
     if (!run || cleared.has(source)) return [];
-    // If "show ended instances" is off and this run has ended, hide its logs
-    if (!showEnded && run.status !== "running") return [];
+    // success = process is running; only error/stopped are truly ended
+    const isEnded = run.status === "error" || run.status === "stopped";
+    if (!showEnded && isEnded) return [];
     return run.logs.map((l) => ({
       ts: l.ts.slice(11, 19),
       stream: l.stream,
@@ -973,7 +973,8 @@ export class ArtifactDetailComponent {
     const source = this.selectedConsoleSource();
     if (source === "daemon") return this.daemon.isConnected();
     const run = this.daemon.actionRuns().find((r) => r.runId === source);
-    return run?.status === "running";
+    // success = process is now running (started OK); treat same as "running" for scroll/live purposes
+    return run?.status === "running" || run?.status === "success";
   });
 
   constructor() {
