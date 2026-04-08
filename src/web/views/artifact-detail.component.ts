@@ -428,7 +428,7 @@ const ICON_PATHS: Record<string, string> = {
                           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                             <polyline points="20,6 9,17 4,12"/>
                           </svg>
-                          Succeeded (exit 0)
+                          Succeeded
                         </div>
                         @if (run.helpers.length > 0) {
                           <div class="flex flex-wrap gap-1.5 mt-1">
@@ -949,8 +949,11 @@ export class ArtifactDetailComponent {
       }));
     }
 
+    const showEnded = this.showEndedInstances();
     const run = this.daemon.actionRuns().find((r) => r.runId === source);
     if (!run || cleared.has(source)) return [];
+    // If "show ended instances" is off and this run has ended, hide its logs
+    if (!showEnded && run.status !== "running") return [];
     return run.logs.map((l) => ({
       ts: l.ts.slice(11, 19),
       stream: l.stream,

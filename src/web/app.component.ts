@@ -80,9 +80,7 @@ import { SettingsComponent } from "./views/settings.component";
               @if (daemon.status()?.daemon?.port) {
                 <div class="text-[10px] text-tx-muted font-mono">localhost:{{ daemon.status()?.daemon?.port }}</div>
               }
-              @if (daemon.daemonVersion()) {
-                <div class="text-[10px] text-tx-disabled font-mono">v{{ daemon.daemonVersion() }}</div>
-              }
+              <div class="text-[10px] text-tx-disabled font-mono">v{{ daemon.daemonVersion() ?? '–' }}</div>
             </div>
             <button class="w-5 h-5 flex items-center justify-center text-tx-muted hover:text-tx-secondary transition-colors flex-shrink-0"
                     title="Refresh"
