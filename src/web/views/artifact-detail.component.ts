@@ -1105,6 +1105,8 @@ export class ArtifactDetailComponent {
         this.sourceScrollPositions.delete(runId);
         this.selectedConsoleSource.set(runId);
       } else {
+        // Register background run in Dev Tools so it appears in the source list
+        this.daemon.registerBackgroundRun(runId, actionId, action.label);
         this.daemon.addNotification("info", "Launched in background", `Action '${action.label}' is running in background (non-blocking).`);
       }
     }
