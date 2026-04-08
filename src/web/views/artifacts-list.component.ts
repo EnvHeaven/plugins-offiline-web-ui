@@ -99,9 +99,10 @@ type SortKey = "name" | "path" | "status";
                   <div class="flex items-center gap-2 mb-0.5">
                     <span class="text-sm font-medium text-tx-primary">{{ repo.name }}</span>
                     @if (repo.selected) {
-                      <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-dim text-accent-light border border-accent-border uppercase tracking-wide">
+                      <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-dim text-accent-light border border-accent-border uppercase tracking-wide cursor-help"
+                            title="This is the active EnvHeaven context.">
                         <span class="w-1.5 h-1.5 rounded-full bg-accent-light status-pulse"></span>
-                        Active
+                        Selected
                       </span>
                     }
                   </div>

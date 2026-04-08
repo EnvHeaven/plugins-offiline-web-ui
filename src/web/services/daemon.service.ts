@@ -281,9 +281,9 @@ export class DaemonService {
     await this.refreshRepos();
   }
 
-  async dispatchAction(actionId: string): Promise<string | null> {
+  async dispatchAction(actionId: string, background = false): Promise<string | null> {
     try {
-      const payload = await postJsonRead<{ runId: string }>("/api/actions/dispatch", { actionId });
+      const payload = await postJsonRead<{ runId: string }>("/api/actions/dispatch", { actionId, background });
       return payload.runId;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to dispatch action.";
