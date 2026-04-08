@@ -1,8 +1,7 @@
-import { Component, inject, computed, signal } from "@angular/core";
+import { Component, inject, computed, signal, viewChild, ElementRef, effect } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import {
   DaemonService,
-  VersionRecord,
   ActionDefinition,
   ActionHelper,
   ArtifactMeta,
@@ -11,6 +10,7 @@ import { NavService } from "../services/nav.service";
 import { VersionPanelComponent } from "@jovdk-web";
 
 type DetailTab = "overview" | "versions" | "actions" | "tree" | "logs";
+type RunMode = "stream" | "background";
 
 interface ConsoleDisplayEntry {
   ts: string;
@@ -18,6 +18,29 @@ interface ConsoleDisplayEntry {
   text: string;
   level: string;
 }
+
+interface ConsoleSourceGroup {
+  actionId: string;
+  actionLabel: string;
+  runs: { id: string; ts: Date; isEnded: boolean }[];
+}
+
+const ICON_PATHS: Record<string, string> = {
+  play: "<polygon points='5,3 19,12 5,21'/>",
+  build: "<path stroke-linecap='round' stroke-linejoin='round' d='M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z'/>",
+  deploy: "<path stroke-linecap='round' stroke-linejoin='round' d='M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12'/>",
+  test: "<path stroke-linecap='round' stroke-linejoin='round' d='M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4'/>",
+  sync: "<path stroke-linecap='round' stroke-linejoin='round' d='M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'/>",
+  clean: "<path stroke-linecap='round' stroke-linejoin='round' d='M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16'/>",
+  package: "<path stroke-linecap='round' stroke-linejoin='round' d='M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4'/>",
+  upload: "<path stroke-linecap='round' stroke-linejoin='round' d='M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12'/>",
+  download: "<path stroke-linecap='round' stroke-linejoin='round' d='M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4'/>",
+  open: "<path stroke-linecap='round' stroke-linejoin='round' d='M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'/>",
+  terminal: "<path stroke-linecap='round' stroke-linejoin='round' d='M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'/>",
+  server: "<path stroke-linecap='round' stroke-linejoin='round' d='M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01'/>",
+  git: "<path stroke-linecap='round' stroke-linejoin='round' d='M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4'/>",
+  check: "<polyline points='20,6 9,17 4,12'/>",
+};
 
 @Component({
   selector: "eh-artifact-detail",
@@ -38,7 +61,7 @@ interface ConsoleDisplayEntry {
           All Artifacts
         </button>
 
-        <!-- Artifact title -->
+        <!-- Artifact title row -->
         @if (artifact(); as repo) {
           <div class="flex items-start justify-between gap-4">
             <div class="flex items-center gap-3">
@@ -106,7 +129,7 @@ interface ConsoleDisplayEntry {
             @if (artifact(); as repo) {
               <div class="grid gap-4 md:grid-cols-2">
 
-                <!-- Metadata card with edit -->
+                <!-- Metadata card with inline editor -->
                 <div class="rounded-lg border border-border-default bg-bg-surface p-5">
                   <div class="flex items-center justify-between mb-3">
                     <h3 class="text-xs font-semibold text-tx-muted uppercase tracking-wider">Artifact Metadata</h3>
@@ -161,7 +184,6 @@ interface ConsoleDisplayEntry {
                       }
                     </div>
                   } @else {
-                    <!-- Edit form -->
                     <div class="space-y-3">
                       <div>
                         <label class="block text-xs text-tx-muted mb-1">Icon</label>
@@ -201,7 +223,7 @@ interface ConsoleDisplayEntry {
                   }
                 </div>
 
-                <!-- Daemon context -->
+                <!-- Daemon context card -->
                 <div class="rounded-lg border border-border-default bg-bg-surface p-5 space-y-3">
                   <h3 class="text-xs font-semibold text-tx-muted uppercase tracking-wider">Daemon Context</h3>
                   <div class="space-y-3">
@@ -222,10 +244,14 @@ interface ConsoleDisplayEntry {
                     }
                     @if (daemon.daemonVersion()) {
                       <div class="flex justify-between items-center gap-4">
-                        <span class="text-xs text-tx-muted">Version</span>
+                        <span class="text-xs text-tx-muted">Daemon version</span>
                         <span class="text-xs font-mono text-tx-secondary">v{{ daemon.daemonVersion() }}</span>
                       </div>
                     }
+                    <div class="flex justify-between items-center gap-4">
+                      <span class="text-xs text-tx-muted">Actions</span>
+                      <span class="text-xs text-tx-secondary">{{ daemon.actions().length }}</span>
+                    </div>
                     <div class="flex justify-between items-center gap-4">
                       <span class="text-xs text-tx-muted">Versions loaded</span>
                       <span class="text-xs text-tx-secondary">{{ daemon.versions().length }}</span>
@@ -242,7 +268,7 @@ interface ConsoleDisplayEntry {
                       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <polygon points="5,3 19,12 5,21"/>
                       </svg>
-                      Run
+                      Run Actions
                     </button>
                     <button class="flex items-center gap-2 px-3 py-2 rounded-md border border-border-default bg-bg-raised text-tx-secondary text-sm hover:text-tx-primary hover:border-border-strong transition-colors"
                             (click)="nav.setDetailTab('versions')">
@@ -258,6 +284,13 @@ interface ConsoleDisplayEntry {
                         <path stroke-linecap="round" stroke-linejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
                       </svg>
                       Copy Path
+                    </button>
+                    <button class="flex items-center gap-2 px-3 py-2 rounded-md border border-border-default bg-bg-raised text-tx-secondary text-sm hover:text-tx-primary hover:border-border-strong transition-colors"
+                            (click)="nav.setDetailTab('logs')">
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                      </svg>
+                      Dev Tools
                     </button>
                   </div>
                 </div>
@@ -308,7 +341,7 @@ interface ConsoleDisplayEntry {
             <div class="flex items-center justify-between mb-5">
               <div>
                 <h2 class="text-sm font-semibold text-tx-primary">Artifact Actions</h2>
-                <p class="text-xs text-tx-muted mt-0.5">Trigger operations on this artifact. Results stream inline.</p>
+                <p class="text-xs text-tx-muted mt-0.5">Trigger operations on this artifact. Results stream inline or launch in background.</p>
               </div>
               <div class="flex items-center gap-2">
                 <button class="flex items-center gap-1.5 px-3 py-1.5 rounded border border-border-default bg-bg-surface text-tx-secondary text-xs hover:text-tx-primary hover:border-border-strong transition-colors"
@@ -331,21 +364,19 @@ interface ConsoleDisplayEntry {
             @if (daemon.actions().length === 0 && !addingAction()) {
               <div class="rounded-lg border border-border-default bg-bg-surface py-12 text-center">
                 <p class="text-tx-muted text-sm">No actions defined yet.</p>
-                <p class="text-tx-disabled text-xs mt-1">Click "Add action" to create your first action, or add <code class="font-mono text-[10px] bg-bg-overlay px-1 py-0.5 rounded">.envheaven/actions/*.envheaven.action.json</code> files.</p>
+                <p class="text-tx-disabled text-xs mt-1">Click "Add action" or create <code class="font-mono text-[10px] bg-bg-overlay px-1 py-0.5 rounded">.envheaven/actions/*.envheaven.action.json</code> files.</p>
               </div>
             }
 
             <div class="grid gap-4 md:grid-cols-2">
               @for (action of daemon.actions(); track action.id) {
-                <div class="rounded-lg border border-border-default bg-bg-surface overflow-hidden"
-                     [class]="editingActionId() === action.id ? 'border-accent-border' : ''">
+                <div class="rounded-lg border bg-bg-surface overflow-hidden"
+                     [class]="editingActionId() === action.id ? 'border-accent-border' : 'border-border-default'">
 
                   <!-- Card header -->
                   <div class="flex items-start gap-3 p-4 pb-3">
-                    <div class="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 bg-bg-raised border border-border-default mt-0.5">
-                      <svg class="w-4 h-4 text-tx-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                        <polygon points="5,3 19,12 5,21"/>
-                      </svg>
+                    <div class="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 bg-bg-raised border border-border-default mt-0.5"
+                         [innerHTML]="getIcon(action.icon)">
                     </div>
                     <div class="flex-1 min-w-0">
                       <div class="text-sm font-medium text-tx-primary">{{ action.label }}</div>
@@ -364,9 +395,9 @@ interface ConsoleDisplayEntry {
                     </button>
                   </div>
 
-                  <!-- Live run output -->
+                  <!-- Live run output panels -->
                   @if (latestRunForAction(action.id); as run) {
-                    <!-- Running state -->
+                    <!-- Running — spinner + streaming log -->
                     @if (run.status === 'running') {
                       <div class="mx-4 mb-3 rounded-md border border-border-subtle bg-bg-base p-3">
                         <div class="flex items-center gap-2 mb-2">
@@ -375,7 +406,7 @@ interface ConsoleDisplayEntry {
                           <button class="ml-auto text-[10px] px-2 py-0.5 rounded border border-danger/30 text-red-400 hover:bg-danger/10 transition-colors"
                                   (click)="stopAction(run.runId)">Stop</button>
                         </div>
-                        <div class="log-output max-h-36 overflow-y-auto text-xs space-y-0.5 font-mono">
+                        <div class="max-h-36 overflow-y-auto text-xs space-y-0.5 font-mono">
                           @for (line of run.logs.slice(-60); track $index) {
                             <div class="leading-relaxed"
                                  [class]="line.stream === 'stderr' ? 'text-red-400' : 'text-tx-secondary'">
@@ -389,14 +420,14 @@ interface ConsoleDisplayEntry {
                       </div>
                     }
 
-                    <!-- Success state -->
+                    <!-- Succeeded -->
                     @if (run.status === 'success') {
                       <div class="mx-4 mb-3 rounded-md bg-accent-dim border border-accent-border px-3 py-2">
                         <div class="flex items-center gap-1.5 text-xs text-accent-light mb-1.5">
                           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                             <polyline points="20,6 9,17 4,12"/>
                           </svg>
-                          Completed (exit 0)
+                          Succeeded (exit 0)
                         </div>
                         @if (run.helpers.length > 0) {
                           <div class="flex flex-wrap gap-1.5 mt-1">
@@ -426,7 +457,7 @@ interface ConsoleDisplayEntry {
                       </div>
                     }
 
-                    <!-- Error state -->
+                    <!-- Error / Stopped -->
                     @if (run.status === 'error' || run.status === 'stopped') {
                       <div class="mx-4 mb-3 rounded-md bg-danger-dim border border-danger/30 px-3 py-2">
                         <div class="flex items-center gap-1.5 text-xs text-red-300 mb-1">
@@ -435,7 +466,7 @@ interface ConsoleDisplayEntry {
                             <line x1="15" y1="9" x2="9" y2="15"/>
                             <line x1="9" y1="9" x2="15" y2="15"/>
                           </svg>
-                          {{ run.status === 'stopped' ? 'Stopped' : 'Error' }}
+                          {{ run.status === 'stopped' ? 'Stopped' : 'Failed' }}
                           @if (run.exitCode !== null && run.status !== 'stopped') {
                             <span class="text-tx-disabled">(exit {{ run.exitCode }})</span>
                           }
@@ -458,21 +489,41 @@ interface ConsoleDisplayEntry {
                     }
                   }
 
-                  <!-- Run button -->
+                  <!-- Run type selector + Run button row -->
                   <div class="px-4 pb-4">
-                    <button class="w-full flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-colors border border-border-default bg-bg-raised text-tx-secondary hover:text-tx-primary hover:border-border-strong disabled:opacity-50 disabled:cursor-not-allowed"
-                            [disabled]="latestRunForAction(action.id)?.status === 'running'"
-                            (click)="runAction(action.id)">
-                      @if (latestRunForAction(action.id)?.status === 'running') {
-                        <div class="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                        Running…
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                          <polygon points="5,3 19,12 5,21"/>
-                        </svg>
-                        {{ action.runLabel || 'Run' }}
-                      }
-                    </button>
+                    <div class="flex gap-2 items-center">
+                      <!-- Run type selector -->
+                      <div class="flex rounded border border-border-default overflow-hidden text-[10px] flex-shrink-0">
+                        <button class="px-2 py-1.5 transition-colors"
+                                [class]="getRunMode(action.id) === 'stream'
+                                  ? 'bg-bg-overlay text-tx-primary font-medium'
+                                  : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
+                                title="Stream output live in the card"
+                                (click)="setRunMode(action.id, 'stream')">Stream</button>
+                        <span class="border-l border-border-default"></span>
+                        <button class="px-2 py-1.5 transition-colors"
+                                [class]="getRunMode(action.id) === 'background'
+                                  ? 'bg-bg-overlay text-tx-primary font-medium'
+                                  : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
+                                title="Launch non-blocking in the background"
+                                (click)="setRunMode(action.id, 'background')">BG</button>
+                      </div>
+
+                      <!-- Run button -->
+                      <button class="flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-colors border border-border-default bg-bg-raised text-tx-secondary hover:text-tx-primary hover:border-border-strong disabled:opacity-50 disabled:cursor-not-allowed"
+                              [disabled]="latestRunForAction(action.id)?.status === 'running'"
+                              (click)="runAction(action.id)">
+                        @if (latestRunForAction(action.id)?.status === 'running') {
+                          <div class="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                          Running…
+                        } @else {
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <polygon points="5,3 19,12 5,21"/>
+                          </svg>
+                          {{ action.runLabel || 'Run' }}
+                        }
+                      </button>
+                    </div>
                   </div>
 
                   <!-- Inline edit panel -->
@@ -492,7 +543,7 @@ interface ConsoleDisplayEntry {
                           <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
                                  [ngModel]="editDraft()?.icon ?? ''"
                                  (ngModelChange)="updateDraft('icon', $event)"
-                                 placeholder="play" />
+                                 placeholder="play, build, deploy, test…" />
                         </div>
                       </div>
 
@@ -537,7 +588,7 @@ interface ConsoleDisplayEntry {
                       <!-- Success helpers -->
                       <div>
                         <div class="flex items-center justify-between mb-1.5">
-                          <label class="text-[10px] text-tx-muted">Success helpers</label>
+                          <label class="text-[10px] text-tx-muted font-medium">Success helpers</label>
                           <button class="text-[10px] text-accent-light hover:text-accent transition-colors"
                                   (click)="addHelper('success')">+ Add</button>
                         </div>
@@ -568,7 +619,7 @@ interface ConsoleDisplayEntry {
                       <!-- Fail helpers -->
                       <div>
                         <div class="flex items-center justify-between mb-1.5">
-                          <label class="text-[10px] text-tx-muted">Fail helpers</label>
+                          <label class="text-[10px] text-tx-muted font-medium">Fail helpers</label>
                           <button class="text-[10px] text-accent-light hover:text-accent transition-colors"
                                   (click)="addHelper('fail')">+ Add</button>
                         </div>
@@ -679,7 +730,7 @@ interface ConsoleDisplayEntry {
                 </div>
 
                 @if (sibling_repos().length > 0) {
-                  <div class="tree-line mt-1 space-y-1">
+                  <div class="mt-1 space-y-1">
                     <div class="text-xs text-tx-muted uppercase tracking-wider mb-2 pt-1">Known siblings</div>
                     @for (sibling of sibling_repos(); track sibling.id) {
                       <div class="flex items-center gap-3 p-3 rounded-md border border-border-subtle bg-bg-raised hover:border-border-default hover:bg-bg-overlay transition-colors cursor-pointer"
@@ -698,7 +749,7 @@ interface ConsoleDisplayEntry {
                     }
                   </div>
                 } @else {
-                  <div class="tree-line mt-1">
+                  <div class="mt-1">
                     <p class="text-xs text-tx-muted py-3">No other known artifacts in this workspace.</p>
                   </div>
                 }
@@ -707,46 +758,49 @@ interface ConsoleDisplayEntry {
           </div>
         }
 
-        <!-- DEV TOOLS TAB (was Logs) -->
+        <!-- DEV TOOLS TAB (id = 'logs', label = 'Dev Tools') -->
         @if (nav.activeDetailTab() === 'logs') {
           <div class="px-8 py-6 animate-[fadeIn_0.15s_ease-out] flex flex-col" style="min-height: 400px">
+
             <!-- Header -->
             <div class="flex items-center gap-3 mb-4 flex-shrink-0">
               <div>
                 <h2 class="text-sm font-semibold text-tx-primary">Dev Tools</h2>
-                <p class="text-xs text-tx-muted mt-0.5">Console output from the daemon and action runs.</p>
+                <p class="text-xs text-tx-muted mt-0.5">Console output per source — daemon events or action run streams.</p>
               </div>
               <div class="flex-1"></div>
-              <!-- Show ended toggle -->
               <label class="flex items-center gap-1.5 text-xs text-tx-muted cursor-pointer select-none">
                 <input type="checkbox"
                        class="rounded border-border-default accent-accent"
                        [ngModel]="showEndedInstances()"
                        (ngModelChange)="showEndedInstances.set($event)" />
-                Show ended
+                Show ended runs
               </label>
               <button class="text-xs px-2.5 py-1.5 rounded border border-border-default text-tx-secondary hover:text-tx-primary hover:border-border-strong transition-colors"
                       (click)="clearActiveConsole()">Clear</button>
             </div>
 
-            <!-- Source dropdown -->
+            <!-- Source selector (grouped by action name) -->
             <div class="mb-3 flex-shrink-0">
               <select class="w-full bg-bg-surface border border-border-default rounded px-3 py-2 text-xs text-tx-primary focus:border-accent outline-none"
                       [ngModel]="selectedConsoleSource()"
                       (ngModelChange)="selectedConsoleSource.set($event)">
                 <option value="daemon">Daemon — notifications &amp; events</option>
-                @for (source of consoleSources(); track source.id) {
-                  @if (source.id !== 'daemon') {
-                    <option [value]="source.id">
-                      {{ source.label }}{{ source.isEnded ? ' (ended)' : ' (live)' }}
-                    </option>
-                  }
+                @for (group of consoleSourceGroups(); track group.actionId) {
+                  <optgroup [label]="group.actionLabel + ' (' + group.runs.length + (group.runs.length === 1 ? ' run' : ' runs') + ')'">
+                    @for (run of group.runs; track run.id) {
+                      <option [value]="run.id">
+                        {{ formatTs(run.ts) }} — #{{ run.id.slice(0, 6) }} ({{ run.isEnded ? 'ended' : 'live' }})
+                      </option>
+                    }
+                  </optgroup>
                 }
               </select>
             </div>
 
             <!-- Log terminal pane -->
-            <div class="flex-1 rounded-lg border border-border-default bg-bg-base overflow-y-auto min-h-[300px]">
+            <div class="flex-1 rounded-lg border border-border-default bg-bg-base overflow-hidden flex flex-col min-h-[300px]">
+              <!-- Terminal chrome -->
               <div class="flex items-center gap-2 px-4 py-2 border-b border-border-subtle flex-shrink-0">
                 <div class="flex items-center gap-1.5">
                   <span class="w-3 h-3 rounded-full bg-danger/50"></span>
@@ -761,12 +815,13 @@ interface ConsoleDisplayEntry {
                   </span>
                 }
               </div>
-              <div class="p-4 log-output space-y-1">
+              <!-- Scrollable log entries -->
+              <div class="flex-1 p-4 overflow-y-auto space-y-1" #logPane>
                 @for (entry of activeConsoleLogs(); track $index) {
                   <div class="flex items-start gap-3 text-xs">
                     <span class="text-tx-disabled flex-shrink-0 font-mono w-16">{{ entry.ts }}</span>
                     <span class="text-[10px] px-1 py-px rounded flex-shrink-0 font-mono"
-                          [class]="entry.stream === 'stderr' ? 'bg-danger/20 text-red-400' : entry.stream === 'system' ? 'bg-bg-overlay text-tx-disabled' : 'bg-bg-overlay text-tx-disabled'">
+                          [class]="entry.stream === 'stderr' ? 'bg-danger/20 text-red-400' : 'bg-bg-overlay text-tx-disabled'">
                       {{ entry.stream }}
                     </span>
                     <span class="flex-1 break-all"
@@ -790,6 +845,8 @@ interface ConsoleDisplayEntry {
 export class ArtifactDetailComponent {
   readonly daemon = inject(DaemonService);
   readonly nav = inject(NavService);
+
+  readonly logPane = viewChild<ElementRef>("logPane");
 
   readonly tabs: { id: DetailTab; label: string }[] = [
     { id: "overview", label: "Overview" },
@@ -828,6 +885,9 @@ export class ArtifactDetailComponent {
     failHelpers: [],
   });
 
+  // Run mode per action (stream vs background)
+  readonly runModes = signal<Record<string, RunMode>>({});
+
   // Metadata editing
   readonly metaEditing = signal(false);
   readonly metaDraft = signal<ArtifactMeta>({});
@@ -837,17 +897,20 @@ export class ArtifactDetailComponent {
   readonly showEndedInstances = signal(false);
   readonly clearedSources = signal<Set<string>>(new Set());
 
-  readonly consoleSources = computed(() => {
+  // Groups action runs by action ID for optgroup dropdown
+  readonly consoleSourceGroups = computed((): ConsoleSourceGroup[] => {
     const runs = this.daemon.actionRuns();
     const showEnded = this.showEndedInstances();
-    return runs
-      .filter((r) => showEnded || r.status === "running")
-      .map((r) => ({
-        id: r.runId,
-        label: `${r.actionLabel} #${r.runId.slice(0, 6)}`,
-        isEnded: r.status !== "running",
-        ts: r.startedAt,
-      }));
+    const filtered = runs.filter((r) => showEnded || r.status === "running");
+
+    const map = new Map<string, ConsoleSourceGroup>();
+    for (const r of filtered) {
+      if (!map.has(r.actionId)) {
+        map.set(r.actionId, { actionId: r.actionId, actionLabel: r.actionLabel, runs: [] });
+      }
+      map.get(r.actionId)!.runs.push({ id: r.runId, ts: r.startedAt, isEnded: r.status !== "running" });
+    }
+    return Array.from(map.values());
   });
 
   readonly activeConsoleLogs = computed((): ConsoleDisplayEntry[] => {
@@ -865,8 +928,7 @@ export class ArtifactDetailComponent {
     }
 
     const run = this.daemon.actionRuns().find((r) => r.runId === source);
-    if (!run) return [];
-    if (cleared.has(source)) return [];
+    if (!run || cleared.has(source)) return [];
     return run.logs.map((l) => ({
       ts: l.ts.slice(11, 19),
       stream: l.stream,
@@ -889,6 +951,34 @@ export class ArtifactDetailComponent {
     return run?.status === "running";
   });
 
+  constructor() {
+    effect(() => {
+      this.activeConsoleLogs();
+      const el = this.logPane()?.nativeElement as HTMLElement | undefined;
+      if (el) {
+        setTimeout(() => {
+          el.scrollTop = el.scrollHeight;
+        }, 0);
+      }
+    });
+  }
+
+  // ── Icon helper ──────────────────────────────────────────────────────
+  getIcon(name: string): string {
+    const paths = ICON_PATHS[name ?? "play"] ?? ICON_PATHS["play"];
+    return `<svg class="w-4 h-4 text-tx-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">${paths}</svg>`;
+  }
+
+  // ── Run mode ─────────────────────────────────────────────────────────
+  getRunMode(actionId: string): RunMode {
+    return this.runModes()[actionId] ?? "stream";
+  }
+
+  setRunMode(actionId: string, mode: RunMode): void {
+    this.runModes.update((m) => ({ ...m, [actionId]: mode }));
+  }
+
+  // ── Repo helpers ─────────────────────────────────────────────────────
   useThisRepo(): void {
     const repo = this.artifact();
     if (repo) void this.daemon.selectRepo(repo);
@@ -903,6 +993,7 @@ export class ArtifactDetailComponent {
     void navigator.clipboard.writeText(text);
   }
 
+  // ── Version actions ──────────────────────────────────────────────────
   async saveVersionByName(artifactName: string, nextVersion: string): Promise<void> {
     const ver = this.daemon.versions().find((v) => v.artifactName === artifactName);
     if (!ver) return;
@@ -913,7 +1004,7 @@ export class ArtifactDetailComponent {
     await this.daemon.incrementVersionApi(artifactName);
   }
 
-  // Metadata edit
+  // ── Metadata edit ─────────────────────────────────────────────────────
   startMetaEdit(): void {
     const repo = this.artifact();
     if (!repo) return;
@@ -941,15 +1032,20 @@ export class ArtifactDetailComponent {
     this.metaEditing.set(false);
   }
 
-  // Action run
+  // ── Action run ────────────────────────────────────────────────────────
   async runAction(actionId: string): Promise<void> {
     const action = this.daemon.actions().find((a) => a.id === actionId);
     if (!action) return;
-    const runId = await this.daemon.dispatchAction(actionId);
+    const mode = this.getRunMode(actionId);
+    const background = mode === "background";
+    const runId = await this.daemon.dispatchAction(actionId, background);
     if (runId) {
-      this.daemon.streamAction(runId, actionId, action.label);
-      // Auto-switch Dev Tools to this run's source
-      this.selectedConsoleSource.set(runId);
+      if (!background) {
+        this.daemon.streamAction(runId, actionId, action.label);
+        this.selectedConsoleSource.set(runId);
+      } else {
+        this.daemon.addNotification("info", "Launched in background", `Action '${action.label}' is running in background (non-blocking).`);
+      }
     }
   }
 
@@ -961,7 +1057,7 @@ export class ArtifactDetailComponent {
     return this.daemon.actionRuns().find((r) => r.actionId === actionId) ?? null;
   }
 
-  // Action editing
+  // ── Action editing ────────────────────────────────────────────────────
   toggleEditAction(action: ActionDefinition): void {
     if (this.editingActionId() === action.id) {
       this.cancelEdit();
@@ -1021,7 +1117,7 @@ export class ArtifactDetailComponent {
     });
   }
 
-  // New action form
+  // ── New action form ───────────────────────────────────────────────────
   startAddAction(): void {
     this.addingAction.set(true);
     this.editingActionId.set(null);
@@ -1068,7 +1164,7 @@ export class ArtifactDetailComponent {
     this.addingAction.set(false);
   }
 
-  // Dev Tools
+  // ── Dev Tools ─────────────────────────────────────────────────────────
   clearActiveConsole(): void {
     const source = this.selectedConsoleSource();
     if (source === "daemon") {
@@ -1080,6 +1176,10 @@ export class ArtifactDetailComponent {
         return next;
       });
     }
+  }
+
+  formatTs(d: Date): string {
+    return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
 }
 
