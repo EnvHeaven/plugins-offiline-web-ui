@@ -1,16 +1,22 @@
 import { Component, inject, computed, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import { DaemonService, VersionRecord } from "../services/daemon.service";
+import {
+  DaemonService,
+  VersionRecord,
+  ActionDefinition,
+  ActionHelper,
+  ArtifactMeta,
+} from "../services/daemon.service";
 import { NavService } from "../services/nav.service";
 import { VersionPanelComponent } from "@jovdk-web";
 
 type DetailTab = "overview" | "versions" | "actions" | "tree" | "logs";
 
-interface ActionState {
-  running: boolean;
-  done: boolean;
-  error: string | null;
-  output: string[];
+interface ConsoleDisplayEntry {
+  ts: string;
+  stream: string;
+  text: string;
+  level: string;
 }
 
 @Component({
@@ -47,7 +53,8 @@ interface ActionState {
                 <div class="flex items-center gap-2">
                   <h1 class="text-xl font-semibold text-tx-primary">{{ repo.name }}</h1>
                   @if (repo.selected) {
-                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-dim text-accent-light border border-accent-border uppercase tracking-wide">Active</span>
+                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-dim text-accent-light border border-accent-border uppercase tracking-wide cursor-help"
+                          title="This is the active EnvHeaven context.">Selected</span>
                   }
                 </div>
                 <p class="text-xs text-tx-muted font-mono mt-0.5 max-w-lg truncate">{{ repo.path }}</p>
@@ -82,6 +89,9 @@ interface ActionState {
               @if (tab.id === 'versions' && daemon.versions().length > 0) {
                 <span class="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-bg-overlay border border-border-subtle text-tx-muted">{{ daemon.versions().length }}</span>
               }
+              @if (tab.id === 'actions' && daemon.actions().length > 0) {
+                <span class="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-bg-overlay border border-border-subtle text-tx-muted">{{ daemon.actions().length }}</span>
+              }
             </button>
           }
         </div>
@@ -96,30 +106,99 @@ interface ActionState {
             @if (artifact(); as repo) {
               <div class="grid gap-4 md:grid-cols-2">
 
-                <!-- Metadata card -->
-                <div class="rounded-lg border border-border-default bg-bg-surface p-5 space-y-3">
-                  <h3 class="text-xs font-semibold text-tx-muted uppercase tracking-wider">Artifact Metadata</h3>
-                  <div class="space-y-3">
-                    <div class="flex justify-between items-start gap-4">
-                      <span class="text-xs text-tx-muted">Repo ID</span>
-                      <span class="text-xs font-mono text-tx-secondary text-right max-w-[60%] break-all">{{ repo.id }}</span>
+                <!-- Metadata card with edit -->
+                <div class="rounded-lg border border-border-default bg-bg-surface p-5">
+                  <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-xs font-semibold text-tx-muted uppercase tracking-wider">Artifact Metadata</h3>
+                    @if (!metaEditing()) {
+                      <button class="p-1 rounded text-tx-muted hover:text-tx-secondary hover:bg-bg-raised transition-colors"
+                              title="Edit metadata" (click)="startMetaEdit()">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                        </svg>
+                      </button>
+                    }
+                  </div>
+
+                  @if (!metaEditing()) {
+                    <div class="space-y-3">
+                      <div class="flex justify-between items-start gap-4">
+                        <span class="text-xs text-tx-muted">Repo ID</span>
+                        <span class="text-xs font-mono text-tx-secondary text-right max-w-[60%] break-all">{{ repo.id }}</span>
+                      </div>
+                      <div class="flex justify-between items-start gap-4">
+                        <span class="text-xs text-tx-muted">Path</span>
+                        <span class="text-xs font-mono text-tx-secondary text-right max-w-[60%] break-all">{{ repo.path }}</span>
+                      </div>
+                      <div class="flex justify-between items-center gap-4">
+                        <span class="text-xs text-tx-muted">Type</span>
+                        <span class="text-xs text-tx-secondary">{{ repo.type ?? 'env-repo' }}</span>
+                      </div>
+                      <div class="flex justify-between items-center gap-4">
+                        <span class="text-xs text-tx-muted">Status</span>
+                        <div class="flex items-center gap-1.5">
+                          <span class="w-1.5 h-1.5 rounded-full" [class]="repo.selected ? 'bg-accent status-pulse' : 'bg-tx-muted'"></span>
+                          <span class="text-xs" [class]="repo.selected ? 'text-accent-light' : 'text-tx-muted'">{{ repo.selected ? 'Active (selected)' : 'Known' }}</span>
+                        </div>
+                      </div>
+                      @if (repo.meta?.internalName) {
+                        <div class="flex justify-between items-center gap-4">
+                          <span class="text-xs text-tx-muted">Internal name</span>
+                          <span class="text-xs text-tx-secondary">{{ repo.meta?.internalName }}</span>
+                        </div>
+                      }
+                      @if (repo.meta?.labelName) {
+                        <div class="flex justify-between items-center gap-4">
+                          <span class="text-xs text-tx-muted">Label</span>
+                          <span class="text-xs text-tx-secondary">{{ repo.meta?.labelName }}</span>
+                        </div>
+                      }
+                      @if (repo.meta?.instanceLabelName) {
+                        <div class="flex justify-between items-center gap-4">
+                          <span class="text-xs text-tx-muted">Instance label</span>
+                          <span class="text-xs text-tx-secondary">{{ repo.meta?.instanceLabelName }}</span>
+                        </div>
+                      }
                     </div>
-                    <div class="flex justify-between items-start gap-4">
-                      <span class="text-xs text-tx-muted">Path</span>
-                      <span class="text-xs font-mono text-tx-secondary text-right max-w-[60%] break-all">{{ repo.path }}</span>
-                    </div>
-                    <div class="flex justify-between items-center gap-4">
-                      <span class="text-xs text-tx-muted">Type</span>
-                      <span class="text-xs text-tx-secondary">{{ repo.type ?? 'env-repo' }}</span>
-                    </div>
-                    <div class="flex justify-between items-center gap-4">
-                      <span class="text-xs text-tx-muted">Status</span>
-                      <div class="flex items-center gap-1.5">
-                        <span class="w-1.5 h-1.5 rounded-full" [class]="repo.selected ? 'bg-accent status-pulse' : 'bg-tx-muted'"></span>
-                        <span class="text-xs" [class]="repo.selected ? 'text-accent-light' : 'text-tx-muted'">{{ repo.selected ? 'Active (selected)' : 'Known' }}</span>
+                  } @else {
+                    <!-- Edit form -->
+                    <div class="space-y-3">
+                      <div>
+                        <label class="block text-xs text-tx-muted mb-1">Icon</label>
+                        <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                               [ngModel]="metaDraft().icon ?? ''"
+                               (ngModelChange)="metaDraft.update(m => ({ ...m, icon: $event }))"
+                               placeholder="e.g. cube, server, code" />
+                      </div>
+                      <div>
+                        <label class="block text-xs text-tx-muted mb-1">Internal name</label>
+                        <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                               [ngModel]="metaDraft().internalName ?? ''"
+                               (ngModelChange)="metaDraft.update(m => ({ ...m, internalName: $event }))"
+                               placeholder="e.g. my-service" />
+                      </div>
+                      <div>
+                        <label class="block text-xs text-tx-muted mb-1">Label name</label>
+                        <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                               [ngModel]="metaDraft().labelName ?? ''"
+                               (ngModelChange)="metaDraft.update(m => ({ ...m, labelName: $event }))"
+                               placeholder="e.g. My Service" />
+                      </div>
+                      <div>
+                        <label class="block text-xs text-tx-muted mb-1">Instance label name</label>
+                        <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                               [ngModel]="metaDraft().instanceLabelName ?? ''"
+                               (ngModelChange)="metaDraft.update(m => ({ ...m, instanceLabelName: $event }))"
+                               placeholder="e.g. Instance" />
+                      </div>
+                      <div class="flex gap-2 pt-1">
+                        <button class="px-3 py-1.5 rounded bg-accent text-tx-inverse text-xs font-medium hover:bg-accent-light transition-colors"
+                                (click)="saveMetaEdit()">Save</button>
+                        <button class="px-3 py-1.5 rounded border border-border-default bg-bg-raised text-tx-secondary text-xs hover:text-tx-primary transition-colors"
+                                (click)="cancelMetaEdit()">Cancel</button>
                       </div>
                     </div>
-                  </div>
+                  }
                 </div>
 
                 <!-- Daemon context -->
@@ -141,6 +220,12 @@ interface ActionState {
                         <span class="text-xs font-mono text-tx-secondary">{{ daemon.status()?.daemon?.port }}</span>
                       </div>
                     }
+                    @if (daemon.daemonVersion()) {
+                      <div class="flex justify-between items-center gap-4">
+                        <span class="text-xs text-tx-muted">Version</span>
+                        <span class="text-xs font-mono text-tx-secondary">v{{ daemon.daemonVersion() }}</span>
+                      </div>
+                    }
                     <div class="flex justify-between items-center gap-4">
                       <span class="text-xs text-tx-muted">Versions loaded</span>
                       <span class="text-xs text-tx-secondary">{{ daemon.versions().length }}</span>
@@ -158,13 +243,6 @@ interface ActionState {
                         <polygon points="5,3 19,12 5,21"/>
                       </svg>
                       Run
-                    </button>
-                    <button class="flex items-center gap-2 px-3 py-2 rounded-md border border-border-default bg-bg-raised text-tx-secondary text-sm hover:text-tx-primary hover:border-border-strong transition-colors"
-                            (click)="nav.setDetailTab('actions')">
-                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
-                      </svg>
-                      Deploy
                     </button>
                     <button class="flex items-center gap-2 px-3 py-2 rounded-md border border-border-default bg-bg-raised text-tx-secondary text-sm hover:text-tx-primary hover:border-border-strong transition-colors"
                             (click)="nav.setDetailTab('versions')">
@@ -188,7 +266,7 @@ interface ActionState {
           </div>
         }
 
-        <!-- VERSIONS TAB — powered by JovDK-Web VersionPanelComponent -->
+        <!-- VERSIONS TAB -->
         @if (nav.activeDetailTab() === 'versions') {
           <div class="px-8 py-6 animate-[fadeIn_0.15s_ease-out]">
             <div class="flex items-center justify-between mb-5">
@@ -227,75 +305,353 @@ interface ActionState {
         <!-- ACTIONS TAB -->
         @if (nav.activeDetailTab() === 'actions') {
           <div class="px-8 py-6 animate-[fadeIn_0.15s_ease-out]">
-            <div class="mb-5">
-              <h2 class="text-sm font-semibold text-tx-primary">Artifact Actions</h2>
-              <p class="text-xs text-tx-muted mt-0.5">Trigger operations on this artifact. Results are shown inline.</p>
+            <div class="flex items-center justify-between mb-5">
+              <div>
+                <h2 class="text-sm font-semibold text-tx-primary">Artifact Actions</h2>
+                <p class="text-xs text-tx-muted mt-0.5">Trigger operations on this artifact. Results stream inline.</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded border border-border-default bg-bg-surface text-tx-secondary text-xs hover:text-tx-primary hover:border-border-strong transition-colors"
+                        (click)="daemon.refreshActions()">
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                  </svg>
+                  Refresh
+                </button>
+                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded border border-accent-border bg-accent-dim text-accent-light text-xs hover:bg-accent/20 transition-colors"
+                        (click)="startAddAction()">
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                  </svg>
+                  Add action
+                </button>
+              </div>
             </div>
 
+            @if (daemon.actions().length === 0 && !addingAction()) {
+              <div class="rounded-lg border border-border-default bg-bg-surface py-12 text-center">
+                <p class="text-tx-muted text-sm">No actions defined yet.</p>
+                <p class="text-tx-disabled text-xs mt-1">Click "Add action" to create your first action, or add <code class="font-mono text-[10px] bg-bg-overlay px-1 py-0.5 rounded">.envheaven/actions/*.envheaven.action.json</code> files.</p>
+              </div>
+            }
+
             <div class="grid gap-4 md:grid-cols-2">
-              @for (action of artifactActions; track action.id) {
-                <div class="rounded-lg border border-border-default bg-bg-surface p-4">
-                  <div class="flex items-center gap-3 mb-3">
-                    <div class="w-8 h-8 rounded-md flex items-center justify-center"
-                         [class]="action.variant === 'primary' ? 'bg-accent-dim border border-accent-border' : 'bg-bg-raised border border-border-default'">
-                      <span [innerHTML]="action.icon" [class]="action.variant === 'primary' ? 'text-accent-light' : 'text-tx-muted'"></span>
+              @for (action of daemon.actions(); track action.id) {
+                <div class="rounded-lg border border-border-default bg-bg-surface overflow-hidden"
+                     [class]="editingActionId() === action.id ? 'border-accent-border' : ''">
+
+                  <!-- Card header -->
+                  <div class="flex items-start gap-3 p-4 pb-3">
+                    <div class="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 bg-bg-raised border border-border-default mt-0.5">
+                      <svg class="w-4 h-4 text-tx-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <polygon points="5,3 19,12 5,21"/>
+                      </svg>
                     </div>
-                    <div>
+                    <div class="flex-1 min-w-0">
                       <div class="text-sm font-medium text-tx-primary">{{ action.label }}</div>
-                      <div class="text-xs text-tx-muted">{{ action.description }}</div>
+                      @if (action.description) {
+                        <div class="text-xs text-tx-muted mt-0.5">{{ action.description }}</div>
+                      }
+                      <div class="text-[10px] font-mono text-tx-disabled mt-1 truncate">{{ action.runCommand }}</div>
                     </div>
+                    <button class="p-1.5 rounded text-tx-muted hover:text-tx-secondary hover:bg-bg-raised transition-colors flex-shrink-0"
+                            [class]="editingActionId() === action.id ? 'text-accent-light bg-accent-dim' : ''"
+                            title="Edit action"
+                            (click)="toggleEditAction(action)">
+                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                      </svg>
+                    </button>
                   </div>
 
-                  @if (actionStates()[action.id]; as state) {
-                    @if (state.running) {
-                      <div class="mb-3 flex items-center gap-2 text-xs text-tx-secondary">
-                        <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
-                        Running...
+                  <!-- Live run output -->
+                  @if (latestRunForAction(action.id); as run) {
+                    <!-- Running state -->
+                    @if (run.status === 'running') {
+                      <div class="mx-4 mb-3 rounded-md border border-border-subtle bg-bg-base p-3">
+                        <div class="flex items-center gap-2 mb-2">
+                          <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+                          <span class="text-xs text-tx-secondary font-medium">Running…</span>
+                          <button class="ml-auto text-[10px] px-2 py-0.5 rounded border border-danger/30 text-red-400 hover:bg-danger/10 transition-colors"
+                                  (click)="stopAction(run.runId)">Stop</button>
+                        </div>
+                        <div class="log-output max-h-36 overflow-y-auto text-xs space-y-0.5 font-mono">
+                          @for (line of run.logs.slice(-60); track $index) {
+                            <div class="leading-relaxed"
+                                 [class]="line.stream === 'stderr' ? 'text-red-400' : 'text-tx-secondary'">
+                              {{ line.text }}
+                            </div>
+                          }
+                          @if (run.logs.length === 0) {
+                            <div class="text-tx-disabled italic">Waiting for output…</div>
+                          }
+                        </div>
                       </div>
                     }
-                    @if (state.done && !state.error) {
-                      <div class="mb-3 rounded-md bg-accent-dim border border-accent-border px-3 py-2">
-                        <div class="flex items-center gap-1.5 text-xs text-accent-light mb-1">
-                          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><polyline points="20,6 9,17 4,12"/></svg>
-                          Completed
+
+                    <!-- Success state -->
+                    @if (run.status === 'success') {
+                      <div class="mx-4 mb-3 rounded-md bg-accent-dim border border-accent-border px-3 py-2">
+                        <div class="flex items-center gap-1.5 text-xs text-accent-light mb-1.5">
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="20,6 9,17 4,12"/>
+                          </svg>
+                          Completed (exit 0)
                         </div>
-                        @if (state.output.length > 0) {
-                          <div class="log-output text-tx-secondary mt-1">
-                            @for (line of state.output; track $index) {
-                              <div>{{ line }}</div>
+                        @if (run.helpers.length > 0) {
+                          <div class="flex flex-wrap gap-1.5 mt-1">
+                            @for (helper of run.helpers; track $index) {
+                              @if (helper.kind === 'open-url') {
+                                <a [href]="helper.value" target="_blank" rel="noopener"
+                                   class="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-border bg-accent/10 text-accent-light hover:bg-accent/20 transition-colors">
+                                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                  </svg>
+                                  {{ helper.label }}
+                                </a>
+                              }
+                              @if (helper.kind === 'copy-text') {
+                                <button class="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-border bg-accent/10 text-accent-light hover:bg-accent/20 transition-colors"
+                                        (click)="copyText(helper.value)">
+                                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                                  </svg>
+                                  {{ helper.label }}
+                                </button>
+                              }
                             }
                           </div>
                         }
-                        @if (action.postActionLink) {
-                          <a [href]="action.postActionLink.url" target="_blank"
-                             class="inline-flex items-center gap-1 mt-2 text-xs text-accent hover:text-accent-light transition-colors">
-                            {{ action.postActionLink.label }}
-                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                            </svg>
-                          </a>
+                      </div>
+                    }
+
+                    <!-- Error state -->
+                    @if (run.status === 'error' || run.status === 'stopped') {
+                      <div class="mx-4 mb-3 rounded-md bg-danger-dim border border-danger/30 px-3 py-2">
+                        <div class="flex items-center gap-1.5 text-xs text-red-300 mb-1">
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="15" y1="9" x2="9" y2="15"/>
+                            <line x1="9" y1="9" x2="15" y2="15"/>
+                          </svg>
+                          {{ run.status === 'stopped' ? 'Stopped' : 'Error' }}
+                          @if (run.exitCode !== null && run.status !== 'stopped') {
+                            <span class="text-tx-disabled">(exit {{ run.exitCode }})</span>
+                          }
+                        </div>
+                        @if (run.helpers.length > 0) {
+                          <div class="flex flex-wrap gap-1.5 mt-1">
+                            @for (helper of run.helpers; track $index) {
+                              @if (helper.kind === 'open-url') {
+                                <a [href]="helper.value" target="_blank" rel="noopener"
+                                   class="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-danger/30 text-red-300 hover:bg-danger/20 transition-colors">{{ helper.label }}</a>
+                              }
+                              @if (helper.kind === 'copy-text') {
+                                <button class="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-danger/30 text-red-300 hover:bg-danger/20 transition-colors"
+                                        (click)="copyText(helper.value)">Copy {{ helper.label }}</button>
+                              }
+                            }
+                          </div>
                         }
                       </div>
                     }
-                    @if (state.error) {
-                      <div class="mb-3 rounded-md bg-danger-dim border border-danger/30 px-3 py-2 text-xs text-red-300">{{ state.error }}</div>
-                    }
                   }
 
-                  <button class="w-full flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-colors"
-                          [class]="action.variant === 'primary'
-                            ? 'bg-accent text-tx-inverse hover:bg-accent-light'
-                            : 'border border-border-default bg-bg-raised text-tx-secondary hover:text-tx-primary hover:border-border-strong'"
-                          [disabled]="actionStates()[action.id]?.running"
-                          (click)="runAction(action.id)">
-                    @if (!actionStates()[action.id]?.running) {
-                      <span [innerHTML]="action.icon"></span>
-                    }
-                    {{ actionStates()[action.id]?.running ? 'Running...' : action.label }}
-                  </button>
+                  <!-- Run button -->
+                  <div class="px-4 pb-4">
+                    <button class="w-full flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-colors border border-border-default bg-bg-raised text-tx-secondary hover:text-tx-primary hover:border-border-strong disabled:opacity-50 disabled:cursor-not-allowed"
+                            [disabled]="latestRunForAction(action.id)?.status === 'running'"
+                            (click)="runAction(action.id)">
+                      @if (latestRunForAction(action.id)?.status === 'running') {
+                        <div class="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                        Running…
+                      } @else {
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <polygon points="5,3 19,12 5,21"/>
+                        </svg>
+                        {{ action.runLabel || 'Run' }}
+                      }
+                    </button>
+                  </div>
+
+                  <!-- Inline edit panel -->
+                  @if (editingActionId() === action.id && editDraft()) {
+                    <div class="border-t border-border-subtle bg-bg-raised p-4 space-y-3">
+                      <div class="text-xs font-semibold text-tx-primary mb-2">Edit Action</div>
+
+                      <div class="grid grid-cols-2 gap-3">
+                        <div>
+                          <label class="block text-[10px] text-tx-muted mb-1">Label</label>
+                          <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                                 [ngModel]="editDraft()?.label ?? ''"
+                                 (ngModelChange)="updateDraft('label', $event)" />
+                        </div>
+                        <div>
+                          <label class="block text-[10px] text-tx-muted mb-1">Icon</label>
+                          <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                                 [ngModel]="editDraft()?.icon ?? ''"
+                                 (ngModelChange)="updateDraft('icon', $event)"
+                                 placeholder="play" />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label class="block text-[10px] text-tx-muted mb-1">Description</label>
+                        <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                               [ngModel]="editDraft()?.description ?? ''"
+                               (ngModelChange)="updateDraft('description', $event)" />
+                      </div>
+
+                      <div>
+                        <label class="block text-[10px] text-tx-muted mb-1">Run command</label>
+                        <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs font-mono text-tx-primary focus:border-accent outline-none"
+                               [ngModel]="editDraft()?.runCommand ?? ''"
+                               (ngModelChange)="updateDraft('runCommand', $event)"
+                               placeholder="e.g. pnpm run dev" />
+                      </div>
+
+                      <div>
+                        <label class="block text-[10px] text-tx-muted mb-1">Stop command (optional)</label>
+                        <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs font-mono text-tx-primary focus:border-accent outline-none"
+                               [ngModel]="editDraft()?.stopCommand ?? ''"
+                               (ngModelChange)="updateDraft('stopCommand', $event || null)"
+                               placeholder="leave blank to use SIGTERM" />
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-3">
+                        <div>
+                          <label class="block text-[10px] text-tx-muted mb-1">Run label</label>
+                          <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                                 [ngModel]="editDraft()?.runLabel ?? 'Run'"
+                                 (ngModelChange)="updateDraft('runLabel', $event)" />
+                        </div>
+                        <div>
+                          <label class="block text-[10px] text-tx-muted mb-1">Stop label</label>
+                          <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                                 [ngModel]="editDraft()?.stopLabel ?? 'Stop'"
+                                 (ngModelChange)="updateDraft('stopLabel', $event)" />
+                        </div>
+                      </div>
+
+                      <!-- Success helpers -->
+                      <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                          <label class="text-[10px] text-tx-muted">Success helpers</label>
+                          <button class="text-[10px] text-accent-light hover:text-accent transition-colors"
+                                  (click)="addHelper('success')">+ Add</button>
+                        </div>
+                        <div class="space-y-1.5">
+                          @for (helper of editDraft()?.successHelpers ?? []; track $index; let i = $index) {
+                            <div class="flex gap-1.5 items-center">
+                              <select class="bg-bg-base border border-border-default rounded px-1.5 py-1 text-[10px] text-tx-secondary focus:border-accent outline-none"
+                                      [ngModel]="helper.kind"
+                                      (ngModelChange)="updateHelper('success', i, 'kind', $event)">
+                                <option value="open-url">Open URL</option>
+                                <option value="copy-text">Copy text</option>
+                              </select>
+                              <input class="flex-1 bg-bg-base border border-border-default rounded px-1.5 py-1 text-[10px] text-tx-primary focus:border-accent outline-none"
+                                     [ngModel]="helper.label"
+                                     (ngModelChange)="updateHelper('success', i, 'label', $event)"
+                                     placeholder="Label" />
+                              <input class="flex-1 bg-bg-base border border-border-default rounded px-1.5 py-1 text-[10px] font-mono text-tx-primary focus:border-accent outline-none"
+                                     [ngModel]="helper.value"
+                                     (ngModelChange)="updateHelper('success', i, 'value', $event)"
+                                     placeholder="URL or text" />
+                              <button class="text-[10px] text-red-400 hover:text-red-300 px-1 transition-colors"
+                                      (click)="removeHelper('success', i)">✕</button>
+                            </div>
+                          }
+                        </div>
+                      </div>
+
+                      <!-- Fail helpers -->
+                      <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                          <label class="text-[10px] text-tx-muted">Fail helpers</label>
+                          <button class="text-[10px] text-accent-light hover:text-accent transition-colors"
+                                  (click)="addHelper('fail')">+ Add</button>
+                        </div>
+                        <div class="space-y-1.5">
+                          @for (helper of editDraft()?.failHelpers ?? []; track $index; let i = $index) {
+                            <div class="flex gap-1.5 items-center">
+                              <select class="bg-bg-base border border-border-default rounded px-1.5 py-1 text-[10px] text-tx-secondary focus:border-accent outline-none"
+                                      [ngModel]="helper.kind"
+                                      (ngModelChange)="updateHelper('fail', i, 'kind', $event)">
+                                <option value="open-url">Open URL</option>
+                                <option value="copy-text">Copy text</option>
+                              </select>
+                              <input class="flex-1 bg-bg-base border border-border-default rounded px-1.5 py-1 text-[10px] text-tx-primary focus:border-accent outline-none"
+                                     [ngModel]="helper.label"
+                                     (ngModelChange)="updateHelper('fail', i, 'label', $event)"
+                                     placeholder="Label" />
+                              <input class="flex-1 bg-bg-base border border-border-default rounded px-1.5 py-1 text-[10px] font-mono text-tx-primary focus:border-accent outline-none"
+                                     [ngModel]="helper.value"
+                                     (ngModelChange)="updateHelper('fail', i, 'value', $event)"
+                                     placeholder="URL or text" />
+                              <button class="text-[10px] text-red-400 hover:text-red-300 px-1 transition-colors"
+                                      (click)="removeHelper('fail', i)">✕</button>
+                            </div>
+                          }
+                        </div>
+                      </div>
+
+                      <div class="flex gap-2 pt-1">
+                        <button class="px-3 py-1.5 rounded bg-accent text-tx-inverse text-xs font-medium hover:bg-accent-light transition-colors"
+                                (click)="saveEdit()">Save</button>
+                        <button class="px-3 py-1.5 rounded border border-border-default bg-bg-surface text-tx-secondary text-xs hover:text-tx-primary transition-colors"
+                                (click)="cancelEdit()">Cancel</button>
+                      </div>
+                    </div>
+                  }
                 </div>
               }
             </div>
+
+            <!-- Add new action form -->
+            @if (addingAction()) {
+              <div class="mt-4 rounded-lg border border-accent-border bg-bg-surface p-4">
+                <div class="text-xs font-semibold text-tx-primary mb-3">New Action</div>
+                <div class="space-y-3">
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-[10px] text-tx-muted mb-1">ID (unique, no spaces)</label>
+                      <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs font-mono text-tx-primary focus:border-accent outline-none"
+                             [ngModel]="newActionDraft().id ?? ''"
+                             (ngModelChange)="newActionDraft.update(d => ({ ...d, id: $event }))"
+                             placeholder="e.g. run-local" />
+                    </div>
+                    <div>
+                      <label class="block text-[10px] text-tx-muted mb-1">Label</label>
+                      <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                             [ngModel]="newActionDraft().label ?? ''"
+                             (ngModelChange)="newActionDraft.update(d => ({ ...d, label: $event }))"
+                             placeholder="e.g. Run Locally" />
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] text-tx-muted mb-1">Description</label>
+                    <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                           [ngModel]="newActionDraft().description ?? ''"
+                           (ngModelChange)="newActionDraft.update(d => ({ ...d, description: $event }))" />
+                  </div>
+                  <div>
+                    <label class="block text-[10px] text-tx-muted mb-1">Run command</label>
+                    <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs font-mono text-tx-primary focus:border-accent outline-none"
+                           [ngModel]="newActionDraft().runCommand ?? ''"
+                           (ngModelChange)="newActionDraft.update(d => ({ ...d, runCommand: $event }))"
+                           placeholder="e.g. pnpm run dev" />
+                  </div>
+                  <div class="flex gap-2 pt-1">
+                    <button class="px-3 py-1.5 rounded bg-accent text-tx-inverse text-xs font-medium hover:bg-accent-light transition-colors disabled:opacity-50"
+                            [disabled]="!newActionDraft().runCommand"
+                            (click)="saveNewAction()">Create</button>
+                    <button class="px-3 py-1.5 rounded border border-border-default bg-bg-raised text-tx-secondary text-xs hover:text-tx-primary transition-colors"
+                            (click)="cancelAddAction()">Cancel</button>
+                  </div>
+                </div>
+              </div>
+            }
           </div>
         }
 
@@ -309,8 +665,6 @@ interface ActionState {
 
             @if (artifact(); as repo) {
               <div class="rounded-lg border border-border-default bg-bg-surface p-5">
-
-                <!-- Current node -->
                 <div class="flex items-center gap-3 p-3 rounded-md border border-accent-border bg-accent-dim mb-1">
                   <svg class="w-4 h-4 text-accent-light flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
@@ -324,7 +678,6 @@ interface ActionState {
                   </div>
                 </div>
 
-                <!-- Sibling repos -->
                 @if (sibling_repos().length > 0) {
                   <div class="tree-line mt-1 space-y-1">
                     <div class="text-xs text-tx-muted uppercase tracking-wider mb-2 pt-1">Known siblings</div>
@@ -354,46 +707,76 @@ interface ActionState {
           </div>
         }
 
-        <!-- LOGS TAB -->
+        <!-- DEV TOOLS TAB (was Logs) -->
         @if (nav.activeDetailTab() === 'logs') {
-          <div class="px-8 py-6 animate-[fadeIn_0.15s_ease-out] flex flex-col h-full">
-            <div class="flex items-center justify-between mb-4">
+          <div class="px-8 py-6 animate-[fadeIn_0.15s_ease-out] flex flex-col" style="min-height: 400px">
+            <!-- Header -->
+            <div class="flex items-center gap-3 mb-4 flex-shrink-0">
               <div>
-                <h2 class="text-sm font-semibold text-tx-primary">Dev Tools — Console Output</h2>
-                <p class="text-xs text-tx-muted mt-0.5">Script and application console output from the daemon.</p>
+                <h2 class="text-sm font-semibold text-tx-primary">Dev Tools</h2>
+                <p class="text-xs text-tx-muted mt-0.5">Console output from the daemon and action runs.</p>
               </div>
-              <div class="flex items-center gap-2">
-                <button class="text-xs px-2.5 py-1.5 rounded border border-border-default text-tx-secondary hover:text-tx-primary hover:border-border-strong transition-colors"
-                        (click)="clearLogs()">Clear</button>
-                <button class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded border border-border-default text-tx-secondary hover:text-tx-primary hover:border-border-strong transition-colors"
-                        (click)="daemon.refreshAll()">
-                  <span class="w-1.5 h-1.5 rounded-full bg-accent status-pulse"></span>
-                  Live
-                </button>
-              </div>
+              <div class="flex-1"></div>
+              <!-- Show ended toggle -->
+              <label class="flex items-center gap-1.5 text-xs text-tx-muted cursor-pointer select-none">
+                <input type="checkbox"
+                       class="rounded border-border-default accent-accent"
+                       [ngModel]="showEndedInstances()"
+                       (ngModelChange)="showEndedInstances.set($event)" />
+                Show ended
+              </label>
+              <button class="text-xs px-2.5 py-1.5 rounded border border-border-default text-tx-secondary hover:text-tx-primary hover:border-border-strong transition-colors"
+                      (click)="clearActiveConsole()">Clear</button>
+            </div>
+
+            <!-- Source dropdown -->
+            <div class="mb-3 flex-shrink-0">
+              <select class="w-full bg-bg-surface border border-border-default rounded px-3 py-2 text-xs text-tx-primary focus:border-accent outline-none"
+                      [ngModel]="selectedConsoleSource()"
+                      (ngModelChange)="selectedConsoleSource.set($event)">
+                <option value="daemon">Daemon — notifications &amp; events</option>
+                @for (source of consoleSources(); track source.id) {
+                  @if (source.id !== 'daemon') {
+                    <option [value]="source.id">
+                      {{ source.label }}{{ source.isEnded ? ' (ended)' : ' (live)' }}
+                    </option>
+                  }
+                }
+              </select>
             </div>
 
             <!-- Log terminal pane -->
             <div class="flex-1 rounded-lg border border-border-default bg-bg-base overflow-y-auto min-h-[300px]">
-              <div class="flex items-center gap-2 px-4 py-2 border-b border-border-subtle">
+              <div class="flex items-center gap-2 px-4 py-2 border-b border-border-subtle flex-shrink-0">
                 <div class="flex items-center gap-1.5">
                   <span class="w-3 h-3 rounded-full bg-danger/50"></span>
                   <span class="w-3 h-3 rounded-full bg-warn/50"></span>
                   <span class="w-3 h-3 rounded-full bg-accent/50"></span>
                 </div>
-                <span class="text-xs text-tx-muted font-mono">daemon output</span>
+                <span class="text-xs text-tx-muted font-mono">{{ activeSourceLabel() }}</span>
+                @if (isActiveSourceLive()) {
+                  <span class="ml-auto flex items-center gap-1 text-xs text-accent-light">
+                    <span class="w-1.5 h-1.5 rounded-full bg-accent status-pulse"></span>
+                    Live
+                  </span>
+                }
               </div>
               <div class="p-4 log-output space-y-1">
-                @for (entry of logEntries(); track $index) {
+                @for (entry of activeConsoleLogs(); track $index) {
                   <div class="flex items-start gap-3 text-xs">
-                    <span class="text-tx-disabled flex-shrink-0 font-mono">{{ entry.ts }}</span>
-                    <span class="flex-1" [class]="entry.level === 'error' ? 'text-red-400' : entry.level === 'warn' ? 'text-yellow-400' : entry.level === 'success' ? 'text-accent-light' : 'text-tx-secondary'">
-                      {{ entry.message }}
+                    <span class="text-tx-disabled flex-shrink-0 font-mono w-16">{{ entry.ts }}</span>
+                    <span class="text-[10px] px-1 py-px rounded flex-shrink-0 font-mono"
+                          [class]="entry.stream === 'stderr' ? 'bg-danger/20 text-red-400' : entry.stream === 'system' ? 'bg-bg-overlay text-tx-disabled' : 'bg-bg-overlay text-tx-disabled'">
+                      {{ entry.stream }}
+                    </span>
+                    <span class="flex-1 break-all"
+                          [class]="entry.level === 'error' ? 'text-red-400' : entry.level === 'warn' ? 'text-yellow-400' : entry.level === 'success' ? 'text-accent-light' : 'text-tx-secondary'">
+                      {{ entry.text }}
                     </span>
                   </div>
                 }
-                @if (logEntries().length === 0) {
-                  <div class="text-xs text-tx-disabled italic">Waiting for output...</div>
+                @if (activeConsoleLogs().length === 0) {
+                  <div class="text-xs text-tx-disabled italic">No output yet…</div>
                 }
               </div>
             </div>
@@ -408,6 +791,14 @@ export class ArtifactDetailComponent {
   readonly daemon = inject(DaemonService);
   readonly nav = inject(NavService);
 
+  readonly tabs: { id: DetailTab; label: string }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "versions", label: "Versions" },
+    { id: "actions", label: "Actions" },
+    { id: "tree", label: "Tree" },
+    { id: "logs", label: "Dev Tools" },
+  ];
+
   readonly artifact = computed(() => {
     const id = this.nav.selectedArtifactId();
     return this.daemon.repos().find((r) => r.id === id) ?? null;
@@ -418,85 +809,89 @@ export class ArtifactDetailComponent {
     return this.daemon.repos().filter((r) => r.id !== id);
   });
 
-  readonly actionStates = signal<Record<string, ActionState>>({});
+  // Action editing
+  readonly editingActionId = signal<string | null>(null);
+  readonly editDraft = signal<ActionDefinition | null>(null);
 
-  readonly logEntries = computed(() => {
-    const notifs = this.daemon.notifications();
-    return notifs.map((n) => ({
-      ts: formatTime(n.ts),
-      level: n.kind === "error" ? "error" : n.kind === "warn" ? "warn" : n.kind === "success" ? "success" : "info",
-      message: `[${n.title}] ${n.message}`,
+  // New action form
+  readonly addingAction = signal(false);
+  readonly newActionDraft = signal<Partial<ActionDefinition & { id: string }>>({
+    id: "",
+    label: "New Action",
+    description: "",
+    icon: "play",
+    runCommand: "",
+    stopCommand: null,
+    runLabel: "Run",
+    stopLabel: "Stop",
+    successHelpers: [],
+    failHelpers: [],
+  });
+
+  // Metadata editing
+  readonly metaEditing = signal(false);
+  readonly metaDraft = signal<ArtifactMeta>({});
+
+  // Dev Tools console
+  readonly selectedConsoleSource = signal<string>("daemon");
+  readonly showEndedInstances = signal(false);
+  readonly clearedSources = signal<Set<string>>(new Set());
+
+  readonly consoleSources = computed(() => {
+    const runs = this.daemon.actionRuns();
+    const showEnded = this.showEndedInstances();
+    return runs
+      .filter((r) => showEnded || r.status === "running")
+      .map((r) => ({
+        id: r.runId,
+        label: `${r.actionLabel} #${r.runId.slice(0, 6)}`,
+        isEnded: r.status !== "running",
+        ts: r.startedAt,
+      }));
+  });
+
+  readonly activeConsoleLogs = computed((): ConsoleDisplayEntry[] => {
+    const source = this.selectedConsoleSource();
+    const cleared = this.clearedSources();
+
+    if (source === "daemon") {
+      if (cleared.has("daemon")) return [];
+      return this.daemon.notifications().map((n) => ({
+        ts: formatShortTime(n.ts),
+        stream: n.kind === "error" ? "stderr" : "system",
+        text: `[${n.title}] ${n.message}`,
+        level: n.kind,
+      }));
+    }
+
+    const run = this.daemon.actionRuns().find((r) => r.runId === source);
+    if (!run) return [];
+    if (cleared.has(source)) return [];
+    return run.logs.map((l) => ({
+      ts: l.ts.slice(11, 19),
+      stream: l.stream,
+      text: l.text,
+      level: l.stream === "stderr" ? "error" : "info",
     }));
   });
 
-  readonly tabs: { id: string; label: string }[] = [
-    { id: "overview", label: "Overview" },
-    { id: "versions", label: "Versions" },
-    { id: "actions", label: "Actions" },
-    { id: "tree", label: "Tree" },
-    { id: "logs", label: "Dev Tools" },
-  ];
+  readonly activeSourceLabel = computed((): string => {
+    const source = this.selectedConsoleSource();
+    if (source === "daemon") return "daemon — notifications";
+    const run = this.daemon.actionRuns().find((r) => r.runId === source);
+    return run ? `${run.actionLabel} #${run.runId.slice(0, 6)}` : source;
+  });
 
-  readonly artifactActions = [
-    {
-      id: "run",
-      label: "Run",
-      description: "Start the artifact environment locally.",
-      variant: "primary" as const,
-      icon: `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polygon points="5,3 19,12 5,21"/></svg>`,
-      postActionLink: null as { label: string; url: string } | null,
-    },
-    {
-      id: "deploy",
-      label: "Deploy",
-      description: "Publish the artifact to production.",
-      variant: "secondary" as const,
-      icon: `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>`,
-      postActionLink: { label: "Open deployed URL", url: "#" },
-    },
-    {
-      id: "build",
-      label: "Build",
-      description: "Compile and bundle the artifact.",
-      variant: "secondary" as const,
-      icon: `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>`,
-      postActionLink: null,
-    },
-    {
-      id: "status-check",
-      label: "Status Check",
-      description: "Refresh daemon state and health.",
-      variant: "secondary" as const,
-      icon: `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
-      postActionLink: null,
-    },
-  ];
+  readonly isActiveSourceLive = computed((): boolean => {
+    const source = this.selectedConsoleSource();
+    if (source === "daemon") return this.daemon.isConnected();
+    const run = this.daemon.actionRuns().find((r) => r.runId === source);
+    return run?.status === "running";
+  });
 
-  async saveVersion(version: VersionRecord): Promise<void> {
-    await this.daemon.saveVersionAndReturn(version);
-  }
-
-  async incrementVersion(version: VersionRecord): Promise<void> {
-    const next = this.daemon.incrementPatch(version.nextVersion ?? version.lastVersion ?? "0.1.0");
-    version.nextVersion = next;
-    await this.saveVersion(version);
-  }
-
-  async saveVersionByName(artifactName: string, nextVersion: string): Promise<void> {
-    const version = this.daemon.versions().find(v => v.artifactName === artifactName);
-    if (version) {
-      version.nextVersion = nextVersion;
-      await this.daemon.saveVersionAndReturn(version);
-    }
-  }
-
-  async incrementVersionByName(artifactName: string): Promise<void> {
-    await this.daemon.incrementVersionApi(artifactName);
-  }
-
-  async useThisRepo(): Promise<void> {
+  useThisRepo(): void {
     const repo = this.artifact();
-    if (repo) await this.daemon.selectRepo(repo);
+    if (repo) void this.daemon.selectRepo(repo);
   }
 
   copyPath(): void {
@@ -504,47 +899,190 @@ export class ArtifactDetailComponent {
     if (repo) void navigator.clipboard.writeText(repo.path);
   }
 
-  async runAction(actionId: string): Promise<void> {
-    this.actionStates.update((s) => ({
-      ...s,
-      [actionId]: { running: true, done: false, error: null, output: [] },
-    }));
+  copyText(text: string): void {
+    void navigator.clipboard.writeText(text);
+  }
 
-    await simulateAction(1500);
+  async saveVersionByName(artifactName: string, nextVersion: string): Promise<void> {
+    const ver = this.daemon.versions().find((v) => v.artifactName === artifactName);
+    if (!ver) return;
+    await this.daemon.saveVersionAndReturn({ ...ver, nextVersion });
+  }
 
-    if (actionId === "status-check") {
-      await this.daemon.refreshAll();
-      this.actionStates.update((s) => ({
-        ...s,
-        [actionId]: {
-          running: false,
-          done: true,
-          error: null,
-          output: [`Daemon: ${this.daemon.isConnected() ? "connected" : "unreachable"}`, `Repos: ${this.daemon.repos().length}`, `Versions: ${this.daemon.versions().length}`],
-        },
-      }));
-    } else {
-      this.actionStates.update((s) => ({
-        ...s,
-        [actionId]: {
-          running: false,
-          done: true,
-          error: null,
-          output: [`Action '${actionId}' dispatched to daemon. Awaiting orchestration endpoint.`],
-        },
-      }));
+  async incrementVersionByName(artifactName: string): Promise<void> {
+    await this.daemon.incrementVersionApi(artifactName);
+  }
+
+  // Metadata edit
+  startMetaEdit(): void {
+    const repo = this.artifact();
+    if (!repo) return;
+    this.metaDraft.set({
+      icon: repo.meta?.icon ?? "",
+      internalName: repo.meta?.internalName ?? "",
+      labelName: repo.meta?.labelName ?? "",
+      instanceLabelName: repo.meta?.instanceLabelName ?? "",
+    });
+    this.metaEditing.set(true);
+  }
+
+  async saveMetaEdit(): Promise<void> {
+    try {
+      await this.daemon.putRepoMeta(this.metaDraft());
+      this.metaEditing.set(false);
+      this.daemon.addNotification("success", "Metadata saved", "Artifact metadata updated.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save metadata.";
+      this.daemon.addNotification("error", "Save failed", msg);
     }
   }
 
-  clearLogs(): void {
-    this.daemon.clearNotifications();
+  cancelMetaEdit(): void {
+    this.metaEditing.set(false);
+  }
+
+  // Action run
+  async runAction(actionId: string): Promise<void> {
+    const action = this.daemon.actions().find((a) => a.id === actionId);
+    if (!action) return;
+    const runId = await this.daemon.dispatchAction(actionId);
+    if (runId) {
+      this.daemon.streamAction(runId, actionId, action.label);
+      // Auto-switch Dev Tools to this run's source
+      this.selectedConsoleSource.set(runId);
+    }
+  }
+
+  async stopAction(runId: string): Promise<void> {
+    await this.daemon.stopAction(runId);
+  }
+
+  latestRunForAction(actionId: string) {
+    return this.daemon.actionRuns().find((r) => r.actionId === actionId) ?? null;
+  }
+
+  // Action editing
+  toggleEditAction(action: ActionDefinition): void {
+    if (this.editingActionId() === action.id) {
+      this.cancelEdit();
+    } else {
+      this.editDraft.set({ ...action });
+      this.editingActionId.set(action.id);
+      this.addingAction.set(false);
+    }
+  }
+
+  cancelEdit(): void {
+    this.editingActionId.set(null);
+    this.editDraft.set(null);
+  }
+
+  async saveEdit(): Promise<void> {
+    const draft = this.editDraft();
+    if (!draft) return;
+    try {
+      await this.daemon.putActionConfig(draft);
+      this.editingActionId.set(null);
+      this.editDraft.set(null);
+      this.daemon.addNotification("success", "Action saved", `Action '${draft.label}' updated.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save action.";
+      this.daemon.addNotification("error", "Save failed", msg);
+    }
+  }
+
+  updateDraft(field: keyof ActionDefinition, value: unknown): void {
+    this.editDraft.update((d) => (d ? { ...d, [field]: value } : d));
+  }
+
+  addHelper(list: "success" | "fail"): void {
+    const key = list === "success" ? "successHelpers" : "failHelpers";
+    const blank: ActionHelper = { kind: "open-url", label: "", value: "" };
+    this.editDraft.update((d) => (d ? { ...d, [key]: [...(d[key] ?? []), blank] } : d));
+  }
+
+  removeHelper(list: "success" | "fail", index: number): void {
+    const key = list === "success" ? "successHelpers" : "failHelpers";
+    this.editDraft.update((d) => {
+      if (!d) return d;
+      const arr = [...(d[key] ?? [])];
+      arr.splice(index, 1);
+      return { ...d, [key]: arr };
+    });
+  }
+
+  updateHelper(list: "success" | "fail", index: number, field: keyof ActionHelper, value: string): void {
+    const key = list === "success" ? "successHelpers" : "failHelpers";
+    this.editDraft.update((d) => {
+      if (!d) return d;
+      const arr = [...(d[key] ?? [])] as ActionHelper[];
+      arr[index] = { ...(arr[index] ?? { kind: "open-url", label: "", value: "" }), [field]: value };
+      return { ...d, [key]: arr };
+    });
+  }
+
+  // New action form
+  startAddAction(): void {
+    this.addingAction.set(true);
+    this.editingActionId.set(null);
+    this.editDraft.set(null);
+    this.newActionDraft.set({
+      id: "",
+      label: "New Action",
+      description: "",
+      icon: "play",
+      runCommand: "",
+      stopCommand: null,
+      runLabel: "Run",
+      stopLabel: "Stop",
+      successHelpers: [],
+      failHelpers: [],
+    });
+  }
+
+  async saveNewAction(): Promise<void> {
+    const draft = this.newActionDraft();
+    if (!draft.id || !draft.runCommand) return;
+    try {
+      await this.daemon.putActionConfig({
+        id: draft.id,
+        label: draft.label ?? draft.id,
+        description: draft.description ?? "",
+        icon: draft.icon ?? "play",
+        runCommand: draft.runCommand,
+        stopCommand: draft.stopCommand ?? null,
+        runLabel: draft.runLabel ?? "Run",
+        stopLabel: draft.stopLabel ?? "Stop",
+        successHelpers: draft.successHelpers ?? [],
+        failHelpers: draft.failHelpers ?? [],
+      });
+      this.addingAction.set(false);
+      this.daemon.addNotification("success", "Action created", `Action '${draft.label ?? draft.id}' created.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to create action.";
+      this.daemon.addNotification("error", "Create failed", msg);
+    }
+  }
+
+  cancelAddAction(): void {
+    this.addingAction.set(false);
+  }
+
+  // Dev Tools
+  clearActiveConsole(): void {
+    const source = this.selectedConsoleSource();
+    if (source === "daemon") {
+      this.daemon.clearNotifications();
+    } else {
+      this.clearedSources.update((s) => {
+        const next = new Set(s);
+        next.add(source);
+        return next;
+      });
+    }
   }
 }
 
-function simulateAction(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function formatTime(d: Date): string {
+function formatShortTime(d: Date): string {
   return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
