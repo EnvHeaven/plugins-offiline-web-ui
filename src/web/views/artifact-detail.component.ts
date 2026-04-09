@@ -82,6 +82,7 @@ export class ArtifactDetailComponent {
   // Action editing
   readonly editingActionId = signal<string | null>(null);
   readonly editDraft = signal<ActionDefinition | null>(null);
+  readonly confirmDeleteActionId = signal<string | null>(null);
 
   // New action form
   readonly addingAction = signal(false);
@@ -344,6 +345,20 @@ export class ArtifactDetailComponent {
   cancelEdit(): void {
     this.editingActionId.set(null);
     this.editDraft.set(null);
+    this.confirmDeleteActionId.set(null);
+  }
+
+  async confirmDeleteAction(actionId: string): Promise<void> {
+    try {
+      await this.daemon.deleteActionConfig(actionId);
+      this.confirmDeleteActionId.set(null);
+      this.editingActionId.set(null);
+      this.editDraft.set(null);
+      this.daemon.addNotification("success", "Action deleted", `Action '${actionId}' removed.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to delete action.";
+      this.daemon.addNotification("error", "Delete failed", msg);
+    }
   }
 
   async saveEdit(): Promise<void> {

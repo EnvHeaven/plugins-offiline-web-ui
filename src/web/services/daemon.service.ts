@@ -416,6 +416,11 @@ export class DaemonService {
     await this.refreshActions();
   }
 
+  async deleteActionConfig(actionId: string): Promise<void> {
+    await deleteReq(`/api/actions/config/${encodeURIComponent(actionId)}`);
+    await this.refreshActions();
+  }
+
   async saveVersion(version: VersionRecord): Promise<void> {
     await postJson("/api/versions/set", {
       artifactName: version.artifactName,
@@ -517,6 +522,13 @@ async function putJson(url: string, body: unknown): Promise<void> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} for ${url}`);
+  }
+}
+
+async function deleteReq(url: string): Promise<void> {
+  const response = await fetch(url, { method: "DELETE" });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} for ${url}`);
   }

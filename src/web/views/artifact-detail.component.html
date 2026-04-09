@@ -669,6 +669,22 @@
                         <button class="px-3 py-1.5 rounded border border-border-default bg-bg-surface text-tx-secondary text-xs hover:text-tx-primary transition-colors"
                                 (click)="cancelEdit()">Cancel</button>
                       </div>
+
+                      <!-- Delete action -->
+                      <div class="pt-3 mt-1 border-t border-border-subtle">
+                        @if (confirmDeleteActionId() === action.id) {
+                          <div class="flex items-center gap-3">
+                            <span class="text-[11px] text-red-400">Delete this action?</span>
+                            <button class="px-2 py-1 rounded bg-red-700 text-[11px] text-white hover:bg-red-600 transition-colors font-medium"
+                                    (click)="confirmDeleteAction(action.id)">Yes, delete</button>
+                            <button class="text-[11px] text-tx-muted hover:text-tx-secondary transition-colors"
+                                    (click)="confirmDeleteActionId.set(null)">Cancel</button>
+                          </div>
+                        } @else {
+                          <button class="text-[11px] text-red-500 hover:text-red-400 transition-colors"
+                                  (click)="confirmDeleteActionId.set(action.id)">Delete action</button>
+                        }
+                      </div>
                     </div>
                   }
                 </div>
