@@ -230,7 +230,7 @@ export class DaemonService {
 
       if (!this.activeRepoPath() && payload.daemon?.repoRoot) {
         this.activeRepoPath.set(payload.daemon.repoRoot);
-        void this.refreshRepos();
+        void Promise.all([this.refreshRepos(), this.refreshVersions(), this.refreshActions()]);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unable to reach the daemon.";
