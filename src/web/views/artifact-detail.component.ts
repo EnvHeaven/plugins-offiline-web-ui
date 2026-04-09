@@ -1,11 +1,13 @@
 import { Component, inject, computed, signal, viewChild, ElementRef, effect } from "@angular/core";
 import { FormsModule } from "@angular/forms";
+import { DomSanitizer, SafeHtml } from "@angular/platform-browser";
 import {
   DaemonService,
   ActionDefinition,
   ActionVariant,
   ActionHelper,
   ArtifactMeta,
+  PageHeaderOptions,
 } from "../services/daemon.service";
 import { NavService } from "../services/nav.service";
 import { VersionPanelComponent } from "@jovdk-web";
@@ -53,6 +55,7 @@ const ICON_PATHS: Record<string, string> = {
 export class ArtifactDetailComponent {
   readonly daemon = inject(DaemonService);
   readonly nav = inject(NavService);
+  private readonly sanitizer = inject(DomSanitizer);
 
   readonly logPane = viewChild<ElementRef>("logPane");
 
@@ -185,10 +188,23 @@ export class ArtifactDetailComponent {
     });
   }
 
+  // ── Header actions (pinned to page header bar) ───────────────────────
+  readonly headerActions = computed(() =>
+    this.daemon.actions().filter((a) => a.pageHeaderOptions?.isFixedOnHeader === true)
+  );
+
+  getHeaderActionLabel(action: ActionDefinition): string {
+    if (action.pageHeaderOptions?.hasToReplaceActionText && action.pageHeaderOptions.actionTextToReplace) {
+      return action.pageHeaderOptions.actionTextToReplace;
+    }
+    return action.label;
+  }
+
   // ── Icon helper ──────────────────────────────────────────────────────
-  getIcon(name: string): string {
+  getIcon(name: string, size = "w-4 h-4"): SafeHtml {
     const paths = ICON_PATHS[name || "play"] ?? ICON_PATHS["play"];
-    return `<svg class="w-4 h-4 text-tx-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">${paths}</svg>`;
+    const svg = `<svg class="${size} text-tx-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">${paths}</svg>`;
+    return this.sanitizer.bypassSecurityTrustHtml(svg);
   }
 
   // ── Run mode ─────────────────────────────────────────────────────────
@@ -346,6 +362,15 @@ export class ArtifactDetailComponent {
 
   updateDraft(field: keyof ActionDefinition, value: unknown): void {
     this.editDraft.update((d) => (d ? { ...d, [field]: value } : d));
+  }
+
+  updateDraftPageHeaderOptions(field: keyof PageHeaderOptions, value: unknown): void {
+    this.editDraft.update((d) => {
+      if (!d) return d;
+      const current = d.pageHeaderOptions ?? { isFixedOnHeader: false };
+      const updated = { ...current, [field]: value };
+      return { ...d, pageHeaderOptions: updated.isFixedOnHeader ? updated : undefined };
+    });
   }
 
   addHelper(list: "success" | "fail"): void {

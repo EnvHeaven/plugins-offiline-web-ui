@@ -58,6 +58,12 @@ export interface ActionVariant {
   env?: Record<string, string>;
 }
 
+export interface PageHeaderOptions {
+  isFixedOnHeader: boolean;
+  hasToReplaceActionText?: boolean;
+  actionTextToReplace?: string;
+}
+
 export interface ActionDefinition {
   id: string;
   label: string;
@@ -70,6 +76,7 @@ export interface ActionDefinition {
   successHelpers: ActionHelper[];
   failHelpers: ActionHelper[];
   variants?: ActionVariant[];
+  pageHeaderOptions?: PageHeaderOptions;
 }
 
 export interface ConsoleLogEntry {
