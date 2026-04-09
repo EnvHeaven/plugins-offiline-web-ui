@@ -51,6 +51,25 @@
           </div>
         }
 
+        <!-- Page header actions bar (Unity-style pinned actions) -->
+        @if (headerActions().length > 0) {
+          <div class="flex items-stretch mt-4 border border-border-default rounded-md overflow-hidden bg-bg-surface w-fit divide-x divide-border-default">
+            @for (action of headerActions(); track action.id) {
+              <button class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-tx-secondary hover:text-tx-primary hover:bg-bg-raised transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      [disabled]="latestRunForAction(action.id)?.status === 'running'"
+                      [title]="action.description || action.label"
+                      (click)="runAction(action.id)">
+                @if (latestRunForAction(action.id)?.status === 'running') {
+                  <div class="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+                } @else {
+                  <span class="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0" [innerHTML]="getIcon(action.icon, 'w-3.5 h-3.5')"></span>
+                }
+                <span>{{ getHeaderActionLabel(action) }}</span>
+              </button>
+            }
+          </div>
+        }
+
         <!-- Tab bar -->
         <div class="flex items-end gap-0 mt-5 border-b border-border-subtle">
           @for (tab of tabs; track tab.id) {
@@ -617,6 +636,31 @@
                             </div>
                           }
                         </div>
+                      </div>
+
+                      <!-- Page header options -->
+                      <div class="pt-2 border-t border-border-subtle">
+                        <div class="text-[10px] text-tx-muted font-medium mb-2">Page header bar</div>
+                        <label class="flex items-center gap-2 cursor-pointer mb-2">
+                          <input type="checkbox" class="rounded border-border-default accent-accent"
+                                 [ngModel]="editDraft()?.pageHeaderOptions?.isFixedOnHeader ?? false"
+                                 (ngModelChange)="updateDraftPageHeaderOptions('isFixedOnHeader', $event)" />
+                          <span class="text-[10px] text-tx-secondary">Pin action button to page header</span>
+                        </label>
+                        @if (editDraft()?.pageHeaderOptions?.isFixedOnHeader) {
+                          <label class="flex items-center gap-2 cursor-pointer mb-2 ml-4">
+                            <input type="checkbox" class="rounded border-border-default accent-accent"
+                                   [ngModel]="editDraft()?.pageHeaderOptions?.hasToReplaceActionText ?? false"
+                                   (ngModelChange)="updateDraftPageHeaderOptions('hasToReplaceActionText', $event)" />
+                            <span class="text-[10px] text-tx-secondary">Use custom button label</span>
+                          </label>
+                          @if (editDraft()?.pageHeaderOptions?.hasToReplaceActionText) {
+                            <input class="ml-4 w-[calc(100%-1rem)] bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                                   [ngModel]="editDraft()?.pageHeaderOptions?.actionTextToReplace ?? ''"
+                                   (ngModelChange)="updateDraftPageHeaderOptions('actionTextToReplace', $event)"
+                                   placeholder="Custom button label" />
+                          }
+                        }
                       </div>
 
                       <div class="flex gap-2 pt-1">
