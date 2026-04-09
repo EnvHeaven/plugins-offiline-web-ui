@@ -102,7 +102,7 @@
                     <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       @if (!repo.selected) {
                         <button class="text-xs px-2.5 py-1 rounded border border-border-default text-tx-secondary hover:text-tx-primary hover:border-border-strong transition-colors"
-                                (click)="$event.stopPropagation(); daemon.selectRepo(repo)">
+                                (click)="$event.stopPropagation(); daemon.setActiveRepo(repo.path); daemon.addNotification('info', 'Context switched', 'Now using ' + repo.name)">
                           Use
                         </button>
                       }
