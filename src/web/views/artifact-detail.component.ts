@@ -250,7 +250,9 @@ export class ArtifactDetailComponent {
   // ── Repo helpers ─────────────────────────────────────────────────────
   useThisRepo(): void {
     const repo = this.artifact();
-    if (repo) void this.daemon.selectRepo(repo);
+    if (!repo) return;
+    this.daemon.setActiveRepo(repo.path);
+    this.daemon.addNotification("info", "Context switched", `Now using ${repo.name}`);
   }
 
   copyPath(): void {

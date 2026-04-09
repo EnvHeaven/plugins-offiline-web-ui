@@ -7,10 +7,6 @@ export interface DaemonStatus {
     port?: number;
     repoRoot?: string | null;
   };
-  selectedRepo?: {
-    repoId: string;
-    repoRoot: string;
-  } | null;
 }
 
 export interface ArtifactMeta {
@@ -107,11 +103,12 @@ export class DaemonService {
   readonly error = signal<string | null>(null);
   readonly notifications = signal<AppNotification[]>([]);
   readonly lastRefreshed = signal<Date | null>(null);
+  readonly activeRepoPath = signal<string | null>(null);
 
   readonly isConnected = computed(() => this.status()?.ok === true);
   readonly daemonVersion = computed(() => this.status()?.version ?? null);
   readonly selectedRepo = computed(() =>
-    this.repos().find((r) => r.selected) ?? null
+    this.repos().find((r) => r.path === this.activeRepoPath()) ?? null
   );
   readonly unreadCount = computed(
     () => this.notifications().filter((n) => !n.read).length
@@ -197,10 +194,7 @@ export class DaemonService {
   }
 
   private async handleWsEvent(type: string, payload: unknown): Promise<void> {
-    if (type === "repo:selected") {
-      await this.refreshAll();
-      this.addNotification("info", "Context changed", "Another tab switched the active repository.");
-    } else if (type === "version:set") {
+    if (type === "version:set") {
       await this.refreshVersions();
     } else if (type === "version:incremented") {
       await this.refreshVersions();
@@ -233,6 +227,11 @@ export class DaemonService {
       if (!wasConnected && payload.ok) {
         this.addNotification("success", "Daemon connected", `Connected on port ${payload.daemon?.port ?? "?"}`);
       }
+
+      if (!this.activeRepoPath() && payload.daemon?.repoRoot) {
+        this.activeRepoPath.set(payload.daemon.repoRoot);
+        void this.refreshRepos();
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unable to reach the daemon.";
       if (this.status()?.ok !== false) {
@@ -246,16 +245,16 @@ export class DaemonService {
   async refreshRepos(): Promise<void> {
     try {
       const payload = await readJson<{
-        selectedRepoId?: string | null;
         repos?: Array<{ repoId: string; repoRoot: string; meta?: ArtifactMeta }>;
       }>("/api/repos");
 
+      const activePath = this.activeRepoPath();
       this.repos.set(
         (payload.repos ?? []).map((repo) => ({
           id: repo.repoId,
           path: repo.repoRoot,
           name: deriveRepoName(repo.repoRoot),
-          selected: repo.repoId === (payload.selectedRepoId ?? null),
+          selected: activePath === repo.repoRoot,
           lastSeen: "recently",
           type: "env-repo",
           meta: repo.meta,
@@ -267,8 +266,10 @@ export class DaemonService {
   }
 
   async refreshVersions(): Promise<void> {
+    const repoRoot = this.activeRepoPath();
+    if (!repoRoot) return;
     try {
-      const payload = await readJson<{ versions: VersionRecord[] }>("/api/versions");
+      const payload = await readJson<{ versions: VersionRecord[] }>(`/api/versions?repoRoot=${encodeURIComponent(repoRoot)}`);
       this.versions.set(payload.versions ?? []);
     } catch {
       // silently ignore
@@ -276,22 +277,24 @@ export class DaemonService {
   }
 
   async refreshActions(): Promise<void> {
+    const repoRoot = this.activeRepoPath();
+    if (!repoRoot) return;
     try {
-      const payload = await readJson<{ actions: ActionDefinition[] }>("/api/actions");
+      const payload = await readJson<{ actions: ActionDefinition[] }>(`/api/actions?repoRoot=${encodeURIComponent(repoRoot)}`);
       this.actions.set(payload.actions ?? []);
     } catch {
       // silently ignore
     }
   }
 
-  async selectRepo(repo: RepoRecord): Promise<void> {
-    await postJson("/api/repos/select", { repoRoot: repo.path });
-    await this.refreshAll();
-    this.addNotification("info", "Context switched", `Now using ${repo.name}`);
+  setActiveRepo(repoPath: string): void {
+    this.activeRepoPath.set(repoPath);
+    void this.refreshAll();
   }
 
   async putRepoMeta(meta: ArtifactMeta): Promise<void> {
-    await putJson("/api/repos/meta", meta);
+    const repoRoot = this.activeRepoPath();
+    await putJson("/api/repos/meta", { ...meta, repoRoot });
     await this.refreshRepos();
   }
 
@@ -302,6 +305,7 @@ export class DaemonService {
     try {
       const payload = await postJsonRead<{ runId: string }>("/api/actions/dispatch", {
         actionId,
+        repoRoot: this.activeRepoPath(),
         background: options.background ?? false,
         ...(options.variantId ? { variantId: options.variantId } : {}),
       });
@@ -412,17 +416,20 @@ export class DaemonService {
   }
 
   async putActionConfig(action: ActionDefinition): Promise<void> {
-    await putJson("/api/actions/config", action);
+    await putJson("/api/actions/config", { ...action, repoRoot: this.activeRepoPath() });
     await this.refreshActions();
   }
 
   async deleteActionConfig(actionId: string): Promise<void> {
-    await deleteReq(`/api/actions/config/${encodeURIComponent(actionId)}`);
+    const repoRoot = this.activeRepoPath();
+    const qs = repoRoot ? `?repoRoot=${encodeURIComponent(repoRoot)}` : "";
+    await deleteReq(`/api/actions/config/${encodeURIComponent(actionId)}${qs}`);
     await this.refreshActions();
   }
 
   async saveVersion(version: VersionRecord): Promise<void> {
     await postJson("/api/versions/set", {
+      repoRoot: this.activeRepoPath(),
       artifactName: version.artifactName,
       nextVersion: version.nextVersion,
     });
@@ -435,7 +442,7 @@ export class DaemonService {
   }
 
   async incrementVersionApi(artifactName: string): Promise<void> {
-    await postJson("/api/versions/increment", { artifactName });
+    await postJson("/api/versions/increment", { repoRoot: this.activeRepoPath(), artifactName });
     await this.refreshVersions();
     const updated = this.versions().find(v => v.artifactName === artifactName);
     const newVer = updated?.nextVersion ?? updated?.lastVersion ?? "?";

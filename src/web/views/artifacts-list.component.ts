@@ -50,8 +50,9 @@ export class ArtifactsListComponent {
     this.nav.openArtifactDetail(repo.id);
   }
 
-  async useRepo(repo: RepoRecord): Promise<void> {
-    await this.daemon.selectRepo(repo);
+  useRepo(repo: RepoRecord): void {
+    this.daemon.setActiveRepo(repo.path);
+    this.daemon.addNotification("info", "Context switched", `Now using ${repo.name}`);
   }
 
   copyPath(repo: RepoRecord): void {
