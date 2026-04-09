@@ -84,11 +84,12 @@ export class AppComponent implements OnInit, OnDestroy {
     this.nav.openArtifactDetail(id);
   }
 
-  async switchContext(id: string): Promise<void> {
+  switchContext(id: string): void {
     this.showContextDropdown.set(false);
     const repo = this.daemon.repos().find((r) => r.id === id);
-    if (repo && !repo.selected) {
-      await this.daemon.selectRepo(repo);
+    if (repo && this.daemon.activeRepoPath() !== repo.path) {
+      this.daemon.setActiveRepo(repo.path);
+      this.daemon.addNotification("info", "Context switched", `Now using ${repo.name}`);
     }
     this.nav.openArtifactDetail(id);
   }
