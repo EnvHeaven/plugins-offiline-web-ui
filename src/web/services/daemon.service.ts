@@ -500,7 +500,7 @@ async function postJson(url: string, body: unknown): Promise<void> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${url}`);
+    throw new Error(await extractErrorMessage(response, url));
   }
 }
 
@@ -511,7 +511,7 @@ async function postJsonRead<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${url}`);
+    throw new Error(await extractErrorMessage(response, url));
   }
   return (await response.json()) as T;
 }
@@ -523,13 +523,21 @@ async function putJson(url: string, body: unknown): Promise<void> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${url}`);
+    throw new Error(await extractErrorMessage(response, url));
   }
 }
 
 async function deleteReq(url: string): Promise<void> {
   const response = await fetch(url, { method: "DELETE" });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${url}`);
+    throw new Error(await extractErrorMessage(response, url));
   }
+}
+
+async function extractErrorMessage(response: Response, url: string): Promise<string> {
+  try {
+    const j = await response.json() as { error?: string };
+    if (typeof j.error === "string" && j.error) return j.error;
+  } catch { /* ignore */ }
+  return `HTTP ${response.status} for ${url}`;
 }
