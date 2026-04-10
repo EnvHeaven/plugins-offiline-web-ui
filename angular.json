@@ -38,7 +38,7 @@
           },
           "configurations": {
             "production": {
-              "baseHref": "/envheaven-ui/",
+              "baseHref": "/",
               "outputHashing": "all",
               "budgets": [
                 {

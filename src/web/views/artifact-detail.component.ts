@@ -79,6 +79,13 @@ export class ArtifactDetailComponent {
     return this.daemon.repos().filter((r) => r.id !== id);
   });
 
+  private readonly autoSelectEffect = effect(() => {
+    const repo = this.artifact();
+    if (repo && this.daemon.activeRepoPath() !== repo.path) {
+      this.daemon.setActiveRepo(repo.path);
+    }
+  });
+
   // Action editing
   readonly editingActionId = signal<string | null>(null);
   readonly editDraft = signal<ActionDefinition | null>(null);
@@ -249,13 +256,6 @@ export class ArtifactDetailComponent {
   }
 
   // ── Repo helpers ─────────────────────────────────────────────────────
-  useThisRepo(): void {
-    const repo = this.artifact();
-    if (!repo) return;
-    this.daemon.setActiveRepo(repo.path);
-    this.daemon.addNotification("info", "Context switched", `Now using ${repo.name}`);
-  }
-
   copyPath(): void {
     const repo = this.artifact();
     if (repo) void navigator.clipboard.writeText(repo.path);

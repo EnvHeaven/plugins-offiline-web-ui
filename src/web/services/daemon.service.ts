@@ -147,9 +147,7 @@ export class DaemonService {
     }
 
     const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const segments = location.pathname.split("/").filter(Boolean);
-    const pathBase = segments.length > 0 ? `/${segments[0]}` : "";
-    const wsUrl = `${wsProtocol}//${location.host}${pathBase}/ws`;
+    const wsUrl = `${wsProtocol}//${location.host}/ws`;
 
     try {
       this.ws = new WebSocket(wsUrl);

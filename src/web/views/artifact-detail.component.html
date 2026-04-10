@@ -12,48 +12,9 @@
           All Artifacts
         </button>
 
-        <!-- Artifact title row -->
-        @if (artifact(); as repo) {
-          <div class="flex items-start justify-between gap-4">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                   [class]="repo.selected ? 'bg-accent-dim border border-accent-border' : 'bg-bg-raised border border-border-default'">
-                <svg class="w-5 h-5" [class]="repo.selected ? 'text-accent-light' : 'text-tx-muted'"
-                     fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                </svg>
-              </div>
-              <div>
-                <div class="flex items-center gap-2">
-                  <h1 class="text-xl font-semibold text-tx-primary">{{ repo.name }}</h1>
-                  @if (repo.selected) {
-                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-dim text-accent-light border border-accent-border uppercase tracking-wide cursor-help"
-                          title="This is the active EnvHeaven context.">Selected</span>
-                  }
-                </div>
-                <p class="text-xs text-tx-muted font-mono mt-0.5 max-w-lg truncate">{{ repo.path }}</p>
-              </div>
-            </div>
-
-            <div class="flex items-center gap-2 flex-shrink-0">
-              @if (!repo.selected) {
-                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded border border-border-default bg-bg-surface text-tx-secondary text-sm hover:text-tx-primary hover:border-border-strong transition-colors"
-                        (click)="useThisRepo()">
-                  Use this artifact
-                </button>
-              }
-            </div>
-          </div>
-        } @else {
-          <div class="flex items-center gap-3 mb-2">
-            <div class="w-10 h-10 rounded-lg bg-bg-raised border border-border-default"></div>
-            <div class="h-6 w-48 bg-bg-raised rounded animate-pulse"></div>
-          </div>
-        }
-
         <!-- Page header actions bar (Unity-style pinned actions) -->
         @if (headerActions().length > 0) {
-          <div class="flex items-center justify-center mt-4 gap-1.5">
+          <div class="flex items-center justify-center mb-4 gap-1.5">
             @for (action of headerActions(); track action.id) {
               <button class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       [class]="action.buttonColor && action.buttonColor !== 'disable'
@@ -74,6 +35,29 @@
                 }
               </button>
             }
+          </div>
+        }
+
+        <!-- Artifact title row -->
+        @if (artifact(); as repo) {
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-accent-dim border border-accent-border">
+                <svg class="w-5 h-5 text-accent-light"
+                     fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                </svg>
+              </div>
+              <div>
+                <h1 class="text-xl font-semibold text-tx-primary">{{ repo.name }}</h1>
+                <p class="text-xs text-tx-muted font-mono mt-0.5 max-w-lg truncate">{{ repo.path }}</p>
+              </div>
+            </div>
+          </div>
+        } @else {
+          <div class="flex items-center gap-3 mb-2">
+            <div class="w-10 h-10 rounded-lg bg-bg-raised border border-border-default"></div>
+            <div class="h-6 w-48 bg-bg-raised rounded animate-pulse"></div>
           </div>
         }
 
@@ -137,8 +121,8 @@
                       <div class="flex justify-between items-center gap-4">
                         <span class="text-xs text-tx-muted">Status</span>
                         <div class="flex items-center gap-1.5">
-                          <span class="w-1.5 h-1.5 rounded-full" [class]="repo.selected ? 'bg-accent status-pulse' : 'bg-tx-muted'"></span>
-                          <span class="text-xs" [class]="repo.selected ? 'text-accent-light' : 'text-tx-muted'">{{ repo.selected ? 'Active (selected)' : 'Known' }}</span>
+                          <span class="w-1.5 h-1.5 rounded-full bg-accent status-pulse"></span>
+                          <span class="text-xs text-accent-light">Active</span>
                         </div>
                       </div>
                       @if (repo.meta?.internalName) {
@@ -858,9 +842,6 @@
                           <div class="text-xs font-medium text-tx-secondary">{{ sibling.name }}</div>
                           <div class="text-[11px] text-tx-muted font-mono truncate">{{ sibling.path }}</div>
                         </div>
-                        @if (sibling.selected) {
-                          <span class="w-1.5 h-1.5 rounded-full bg-accent status-pulse flex-shrink-0"></span>
-                        }
                       </div>
                     }
                   </div>
