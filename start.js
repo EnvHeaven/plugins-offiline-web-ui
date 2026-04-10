@@ -40,7 +40,7 @@ async function handleRequest(req, res) {
   }
   if (!pathname.startsWith("/")) pathname = "/" + pathname;
 
-  // Proxy /envheaven-ui/api/* or /api/* → daemon
+  // Proxy /api/* → daemon
   const apiPrefix = "/api/";
   if (url.pathname.startsWith(BASE_PATH + "/api/") || url.pathname.startsWith(apiPrefix)) {
     try {
