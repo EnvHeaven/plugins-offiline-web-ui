@@ -41,7 +41,10 @@ export class ArtifactsListComponent {
     return [...filtered].sort((a, b) => {
       if (key === "name") return a.name.localeCompare(b.name);
       if (key === "path") return a.path.localeCompare(b.path);
-      if (key === "status") return (b.selected ? 1 : 0) - (a.selected ? 1 : 0);
+      if (key === "status") {
+        const activePath = this.daemon.activeRepoPath();
+        return (activePath === b.path ? 1 : 0) - (activePath === a.path ? 1 : 0);
+      }
       return 0;
     });
   });

@@ -20,7 +20,6 @@ export interface RepoRecord {
   id: string;
   path: string;
   name: string;
-  selected: boolean;
   lastSeen?: string;
   type?: string;
   meta?: ArtifactMeta;
@@ -248,13 +247,11 @@ export class DaemonService {
         repos?: Array<{ repoId: string; repoRoot: string; meta?: ArtifactMeta }>;
       }>("/api/repos");
 
-      const activePath = this.activeRepoPath();
       this.repos.set(
         (payload.repos ?? []).map((repo) => ({
           id: repo.repoId,
           path: repo.repoRoot,
           name: deriveRepoName(repo.repoRoot),
-          selected: activePath === repo.repoRoot,
           lastSeen: "recently",
           type: "env-repo",
           meta: repo.meta,

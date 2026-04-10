@@ -73,8 +73,6 @@ export class NavService {
 
   private restoreFromPath(): void {
     const raw = location.pathname.replace(/^\/+/, "");
-    if (!raw) return;
-
     const parts = raw.split("/").filter(Boolean);
 
     if (parts[0] === "artifact" && parts[1]) {
@@ -87,6 +85,8 @@ export class NavService {
       this.state.set({ view: "settings", artifactId: null, detailTab: "overview" });
     } else if (parts[0] === "artifacts") {
       this.state.set({ view: "artifacts", artifactId: null, detailTab: "overview" });
+    } else {
+      this.state.set({ view: "home", artifactId: null, detailTab: "overview" });
     }
   }
 }

@@ -86,11 +86,11 @@
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-0.5">
                     <span class="text-sm font-medium text-tx-primary">{{ repo.name }}</span>
-                    @if (repo.selected) {
+                    @if (daemon.activeRepoPath() === repo.path) {
                       <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-dim text-accent-light border border-accent-border uppercase tracking-wide cursor-help"
                             title="This is the active EnvHeaven context.">
                         <span class="w-1.5 h-1.5 rounded-full bg-accent-light status-pulse"></span>
-                        Selected
+                        Active
                       </span>
                     }
                   </div>
@@ -107,20 +107,14 @@
                 <!-- Status -->
                 <div class="w-24 flex items-center justify-center gap-1.5">
                   <span class="w-2 h-2 rounded-full flex-shrink-0"
-                        [class]="repo.selected ? 'bg-accent status-pulse' : 'bg-tx-muted'"></span>
-                  <span class="text-xs" [class]="repo.selected ? 'text-accent-light' : 'text-tx-muted'">
-                    {{ repo.selected ? 'selected' : 'known' }}
+                        [class]="daemon.activeRepoPath() === repo.path ? 'bg-accent status-pulse' : 'bg-tx-muted'"></span>
+                  <span class="text-xs" [class]="daemon.activeRepoPath() === repo.path ? 'text-accent-light' : 'text-tx-muted'">
+                    {{ daemon.activeRepoPath() === repo.path ? 'active' : 'known' }}
                   </span>
                 </div>
 
                 <!-- Actions -->
                 <div class="w-20 flex items-center justify-end gap-1">
-                  @if (!repo.selected) {
-                    <button class="text-xs px-2.5 py-1 rounded border border-border-default text-tx-secondary hover:text-tx-primary hover:border-border-strong transition-colors opacity-0 group-hover:opacity-100"
-                            (click)="$event.stopPropagation(); useRepo(repo)">
-                      Use
-                    </button>
-                  }
                   <button class="p-1.5 rounded text-tx-muted hover:text-tx-secondary hover:bg-bg-overlay transition-colors opacity-0 group-hover:opacity-100"
                           title="Copy path"
                           (click)="$event.stopPropagation(); copyPath(repo)">
