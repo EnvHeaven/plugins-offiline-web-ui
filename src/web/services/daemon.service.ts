@@ -73,6 +73,8 @@ export interface ActionDefinition {
   failHelpers: ActionHelper[];
   variants?: ActionVariant[];
   pageHeaderOptions?: PageHeaderOptions;
+  isLocalUser?: boolean;
+  buttonColor?: string;
 }
 
 export interface ConsoleLogEntry {
@@ -119,7 +121,7 @@ export class DaemonService {
   private wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    void this.refreshAll();
+    void this.refreshAll().then(() => this.restoreRunsFromDaemon());
     this.startPolling();
     this.connectWebSocket();
   }
@@ -425,6 +427,56 @@ export class DaemonService {
     const qs = repoRoot ? `?repoRoot=${encodeURIComponent(repoRoot)}` : "";
     await deleteReq(`/api/actions/config/${encodeURIComponent(actionId)}${qs}`);
     await this.refreshActions();
+  }
+
+  async moveActionConfig(actionId: string, toLocalUser: boolean): Promise<void> {
+    await postJson("/api/actions/move", {
+      actionId,
+      repoRoot: this.activeRepoPath(),
+      toLocalUser,
+    });
+    await this.refreshActions();
+  }
+
+  async restoreRunsFromDaemon(): Promise<void> {
+    try {
+      const payload = await readJson<{
+        runs: Array<{
+          runId: string;
+          actionId: string;
+          status: string;
+          exitCode: number | null;
+          startedAt: string;
+          helpers: ActionHelper[];
+          lines: Array<{ stream: string; data: string; ts: string }>;
+        }>;
+      }>("/api/actions/runs/logs");
+
+      const existing = new Set(this.actionRuns().map((r) => r.runId));
+      const actions = this.actions();
+
+      for (const run of payload.runs ?? []) {
+        if (existing.has(run.runId)) continue;
+        const actionDef = actions.find((a) => a.id === run.actionId);
+        const entry: ActionRunEntry = {
+          runId: run.runId,
+          actionId: run.actionId,
+          actionLabel: actionDef?.label ?? run.actionId,
+          status: run.status as ActionRunEntry["status"],
+          exitCode: run.exitCode,
+          startedAt: new Date(run.startedAt),
+          helpers: run.helpers ?? [],
+          logs: run.lines.map((l) => ({
+            ts: l.ts,
+            stream: l.stream as ConsoleLogEntry["stream"],
+            text: l.data,
+          })),
+        };
+        this.actionRuns.update((runs) => [...runs, entry]);
+      }
+    } catch {
+      // silently ignore — daemon may not support this endpoint yet
+    }
   }
 
   async saveVersion(version: VersionRecord): Promise<void> {

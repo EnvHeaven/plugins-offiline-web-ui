@@ -97,6 +97,7 @@ export class ArtifactDetailComponent {
     stopLabel: "Stop",
     successHelpers: [],
     failHelpers: [],
+    isLocalUser: true,
   });
 
   // Run mode per action (stream vs background)
@@ -111,7 +112,7 @@ export class ArtifactDetailComponent {
 
   // Dev Tools console
   readonly selectedConsoleSource = signal<string>("daemon");
-  readonly showEndedInstances = signal(false);
+  readonly showEndedInstances = signal(localStorage.getItem("eh:showEndedRuns") === "true");
   readonly clearedSources = signal<Set<string>>(new Set());
 
   // Stored scroll positions per console source for independent restoration
@@ -432,6 +433,7 @@ export class ArtifactDetailComponent {
       stopLabel: "Stop",
       successHelpers: [],
       failHelpers: [],
+      isLocalUser: true,
     });
   }
 
@@ -450,6 +452,8 @@ export class ArtifactDetailComponent {
         stopLabel: draft.stopLabel ?? "Stop",
         successHelpers: draft.successHelpers ?? [],
         failHelpers: draft.failHelpers ?? [],
+        isLocalUser: draft.isLocalUser ?? true,
+        buttonColor: draft.buttonColor,
       });
       this.addingAction.set(false);
       this.daemon.addNotification("success", "Action created", `Action '${draft.label ?? draft.id}' created.`);
@@ -461,6 +465,25 @@ export class ArtifactDetailComponent {
 
   cancelAddAction(): void {
     this.addingAction.set(false);
+  }
+
+  toggleShowEndedInstances(value: boolean): void {
+    this.showEndedInstances.set(value);
+    localStorage.setItem("eh:showEndedRuns", String(value));
+  }
+
+  async moveAction(actionId: string, toLocalUser: boolean): Promise<void> {
+    try {
+      await this.daemon.moveActionConfig(actionId, toLocalUser);
+      this.daemon.addNotification(
+        "success",
+        "Action moved",
+        `Action '${actionId}' moved to ${toLocalUser ? "local-user" : "base repo"}.`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to move action.";
+      this.daemon.addNotification("error", "Move failed", msg);
+    }
   }
 
   // ── Dev Tools ─────────────────────────────────────────────────────────
