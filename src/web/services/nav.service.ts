@@ -8,6 +8,8 @@ export interface NavState {
   detailTab: "overview" | "versions" | "actions" | "tree" | "logs";
 }
 
+const VALID_TABS: NavState["detailTab"][] = ["overview", "versions", "actions", "tree", "logs"];
+
 @Injectable({ providedIn: "root" })
 export class NavService {
   private readonly state = signal<NavState>({
@@ -20,6 +22,11 @@ export class NavService {
   readonly selectedArtifactId = computed(() => this.state().artifactId);
   readonly activeDetailTab = computed(() => this.state().detailTab);
 
+  constructor() {
+    this.restoreFromHash();
+    window.addEventListener("hashchange", () => this.restoreFromHash());
+  }
+
   navigate(view: ViewId, artifactId?: string): void {
     this.state.update((s) => ({
       ...s,
@@ -27,17 +34,57 @@ export class NavService {
       artifactId: artifactId ?? s.artifactId,
       detailTab: "overview",
     }));
+    this.syncHash();
   }
 
   openArtifactDetail(artifactId: string, tab: NavState["detailTab"] = "overview"): void {
     this.state.set({ view: "detail", artifactId, detailTab: tab });
+    this.syncHash();
   }
 
   setDetailTab(tab: NavState["detailTab"]): void {
     this.state.update((s) => ({ ...s, detailTab: tab }));
+    this.syncHash();
   }
 
   goBack(): void {
     this.state.update((s) => ({ ...s, view: "artifacts", artifactId: null }));
+    this.syncHash();
+  }
+
+  private syncHash(): void {
+    const s = this.state();
+    let hash = "";
+    if (s.view === "detail" && s.artifactId) {
+      hash = `#/artifact/${encodeURIComponent(s.artifactId)}/${s.detailTab}`;
+    } else if (s.view === "settings") {
+      hash = "#/settings";
+    } else if (s.view === "artifacts") {
+      hash = "#/artifacts";
+    } else {
+      hash = "#/";
+    }
+    if (location.hash !== hash) {
+      history.replaceState(null, "", hash);
+    }
+  }
+
+  private restoreFromHash(): void {
+    const raw = location.hash.replace(/^#\/?/, "");
+    if (!raw) return;
+
+    const parts = raw.split("/").filter(Boolean);
+
+    if (parts[0] === "artifact" && parts[1]) {
+      const artifactId = decodeURIComponent(parts[1]);
+      const tab = (VALID_TABS.includes(parts[2] as NavState["detailTab"])
+        ? parts[2]
+        : "overview") as NavState["detailTab"];
+      this.state.set({ view: "detail", artifactId, detailTab: tab });
+    } else if (parts[0] === "settings") {
+      this.state.set({ view: "settings", artifactId: null, detailTab: "overview" });
+    } else if (parts[0] === "artifacts") {
+      this.state.set({ view: "artifacts", artifactId: null, detailTab: "overview" });
+    }
   }
 }

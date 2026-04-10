@@ -53,9 +53,13 @@
 
         <!-- Page header actions bar (Unity-style pinned actions) -->
         @if (headerActions().length > 0) {
-          <div class="flex items-stretch mt-4 border border-border-default rounded-md overflow-hidden bg-bg-surface w-fit divide-x divide-border-default">
+          <div class="flex items-center justify-center mt-4 gap-1.5">
             @for (action of headerActions(); track action.id) {
-              <button class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-tx-secondary hover:text-tx-primary hover:bg-bg-raised transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              <button class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      [class]="action.buttonColor && action.buttonColor !== 'disable'
+                        ? 'text-white font-medium'
+                        : 'text-tx-secondary hover:text-tx-primary border border-border-default bg-bg-surface hover:bg-bg-raised'"
+                      [style.background-color]="action.buttonColor && action.buttonColor !== 'disable' ? action.buttonColor : ''"
                       [disabled]="latestRunForAction(action.id)?.status === 'running'"
                       [title]="action.description || action.label"
                       (click)="runAction(action.id)">
@@ -65,6 +69,9 @@
                   <span class="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0" [innerHTML]="getIcon(action.icon, 'w-3.5 h-3.5')"></span>
                 }
                 <span>{{ getHeaderActionLabel(action) }}</span>
+                @if (action.isLocalUser) {
+                  <span class="text-[8px] font-bold uppercase tracking-wider px-1 py-px rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">local</span>
+                }
               </button>
             }
           </div>
@@ -338,38 +345,73 @@
               </div>
             }
 
-            <div class="grid gap-4 md:grid-cols-2">
+            <div class="grid gap-3 md:grid-cols-2">
               @for (action of daemon.actions(); track action.id) {
-                <div class="rounded-lg border bg-bg-surface overflow-hidden"
-                     [class]="editingActionId() === action.id ? 'border-accent-border' : 'border-border-default'">
+                <div class="group relative rounded-md overflow-hidden transition-colors"
+                     [class]="editingActionId() === action.id ? 'ring-1 ring-accent-border bg-bg-surface' : ''">
 
-                  <!-- Card header -->
-                  <div class="flex items-start gap-3 p-4 pb-3">
-                    <div class="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 bg-bg-raised border border-border-default mt-0.5"
-                         [innerHTML]="getIcon(action.icon)">
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="text-sm font-medium text-tx-primary">{{ action.label }}</div>
-                      @if (action.description) {
-                        <div class="text-xs text-tx-muted mt-0.5">{{ action.description }}</div>
+                  <!-- Run button row (main card content — no card chrome) -->
+                  <div class="flex gap-2 items-center p-2">
+                    <!-- Variant selector (if action has variants) -->
+                    @if ((action.variants ?? []).length > 0) {
+                      <select class="bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none flex-shrink-0 max-w-[140px]"
+                              [ngModel]="getSelectedVariant(action.id)"
+                              (ngModelChange)="setSelectedVariant(action.id, $event)">
+                        <option value="">(default)</option>
+                        @for (variant of action.variants ?? []; track variant.id) {
+                          <option [value]="variant.id">{{ variant.label }}</option>
+                        }
+                      </select>
+                    }
+
+                    <!-- Run button (uses action icon, not hardcoded play) -->
+                    <button class="flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            [class]="action.buttonColor && action.buttonColor !== 'disable'
+                              ? 'text-white'
+                              : 'border border-border-default bg-bg-raised text-tx-secondary hover:text-tx-primary hover:border-border-strong'"
+                            [style.background-color]="action.buttonColor && action.buttonColor !== 'disable' ? action.buttonColor : ''"
+                            [disabled]="latestRunForAction(action.id)?.status === 'running'"
+                            (click)="runAction(action.id)">
+                      @if (latestRunForAction(action.id)?.status === 'running') {
+                        <div class="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                        Running…
+                      } @else {
+                        <span class="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0" [innerHTML]="getIcon(action.icon, 'w-3.5 h-3.5')"></span>
+                        {{ action.runLabel || 'Run' }}
+                        @if (action.isLocalUser) {
+                          <span class="text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 ml-0.5">local</span>
+                        }
                       }
-                      <div class="text-[10px] font-mono text-tx-disabled mt-1 truncate">{{ action.runCommand }}</div>
-                    </div>
-                    <button class="p-1.5 rounded text-tx-muted hover:text-tx-secondary hover:bg-bg-raised transition-colors flex-shrink-0"
+                    </button>
+
+                    <!-- Edit button (orange dot for local-user) -->
+                    <button class="p-1.5 rounded text-tx-muted hover:text-tx-secondary hover:bg-bg-raised transition-colors flex-shrink-0 relative"
                             [class]="editingActionId() === action.id ? 'text-accent-light bg-accent-dim' : ''"
                             title="Edit action"
                             (click)="toggleEditAction(action)">
                       <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                       </svg>
+                      @if (action.isLocalUser) {
+                        <span class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-orange-500 border border-bg-base"></span>
+                      }
                     </button>
                   </div>
 
+                  <!-- Hover footer: description + command (only visible on hover when not editing) -->
+                  @if (editingActionId() !== action.id && (action.description || action.runCommand)) {
+                    <div class="px-3 pb-2 pt-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      @if (action.description) {
+                        <div class="text-[10px] text-tx-muted">{{ action.description }}</div>
+                      }
+                      <div class="text-[10px] font-mono text-tx-disabled truncate">{{ action.runCommand }}</div>
+                    </div>
+                  }
+
                   <!-- Live run output panels -->
                   @if (latestRunForAction(action.id); as run) {
-                    <!-- Running — spinner + streaming log -->
                     @if (run.status === 'running') {
-                      <div class="mx-4 mb-3 rounded-md border border-border-subtle bg-bg-base p-3">
+                      <div class="mx-2 mb-2 rounded-md border border-border-subtle bg-bg-base p-3">
                         <div class="flex items-center gap-2 mb-2">
                           <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
                           <span class="text-xs text-tx-secondary font-medium">Running…</span>
@@ -390,9 +432,8 @@
                       </div>
                     }
 
-                    <!-- Succeeded — process completed OK -->
                     @if (run.status === 'success') {
-                      <div class="mx-4 mb-3 rounded-md bg-accent-dim border border-accent-border px-3 py-2">
+                      <div class="mx-2 mb-2 rounded-md bg-accent-dim border border-accent-border px-3 py-2">
                         <div class="flex items-center gap-2 text-xs text-accent-light mb-1.5">
                           <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                             <polyline points="20,6 9,17 4,12"/>
@@ -430,9 +471,8 @@
                       </div>
                     }
 
-                    <!-- Error / Stopped -->
                     @if (run.status === 'error' || run.status === 'stopped') {
-                      <div class="mx-4 mb-3 rounded-md bg-danger-dim border border-danger/30 px-3 py-2">
+                      <div class="mx-2 mb-2 rounded-md bg-danger-dim border border-danger/30 px-3 py-2">
                         <div class="flex items-center gap-1.5 text-xs text-red-300 mb-1">
                           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"/>
@@ -461,58 +501,6 @@
                       </div>
                     }
                   }
-
-                  <!-- Variant selector (if action has variants) -->
-                  @if ((action.variants ?? []).length > 0) {
-                    <div class="px-4 pb-2">
-                      <label class="block text-[10px] text-tx-muted mb-1">Variant</label>
-                      <select class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
-                              [ngModel]="getSelectedVariant(action.id)"
-                              (ngModelChange)="setSelectedVariant(action.id, $event)">
-                        <option value="">(default)</option>
-                        @for (variant of action.variants ?? []; track variant.id) {
-                          <option [value]="variant.id">{{ variant.label }}</option>
-                        }
-                      </select>
-                    </div>
-                  }
-
-                  <!-- Run type selector + Run button row -->
-                  <div class="px-4 pb-4">
-                    <div class="flex gap-2 items-center">
-                      <!-- Run type selector (stream vs background) -->
-                      <div class="flex rounded border border-border-default overflow-hidden text-[10px] flex-shrink-0">
-                        <button class="px-2 py-1.5 transition-colors"
-                                [class]="getRunMode(action.id) === 'stream'
-                                  ? 'bg-bg-overlay text-tx-primary font-medium'
-                                  : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
-                                title="Stream output live in this card"
-                                (click)="setRunMode(action.id, 'stream')">Stream</button>
-                        <span class="border-l border-border-default"></span>
-                        <button class="px-2 py-1.5 transition-colors"
-                                [class]="getRunMode(action.id) === 'background'
-                                  ? 'bg-bg-overlay text-tx-primary font-medium'
-                                  : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
-                                title="Launch non-blocking in the background (no streaming)"
-                                (click)="setRunMode(action.id, 'background')">BG</button>
-                      </div>
-
-                      <!-- Run button -->
-                      <button class="flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-colors border border-border-default bg-bg-raised text-tx-secondary hover:text-tx-primary hover:border-border-strong disabled:opacity-50 disabled:cursor-not-allowed"
-                              [disabled]="latestRunForAction(action.id)?.status === 'running'"
-                              (click)="runAction(action.id)">
-                        @if (latestRunForAction(action.id)?.status === 'running') {
-                          <div class="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                          Running…
-                        } @else {
-                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <polygon points="5,3 19,12 5,21"/>
-                          </svg>
-                          {{ action.runLabel || 'Run' }}
-                        }
-                      </button>
-                    </div>
-                  </div>
 
                   <!-- Inline edit panel -->
                   @if (editingActionId() === action.id && editDraft()) {
@@ -573,6 +561,33 @@
                           <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
                                  [ngModel]="editDraft()?.stopLabel ?? 'Stop'"
                                  (ngModelChange)="updateDraft('stopLabel', $event)" />
+                        </div>
+                      </div>
+
+                      <!-- Button color -->
+                      <div>
+                        <label class="block text-[10px] text-tx-muted mb-1">Button color (hex or "disable")</label>
+                        <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs font-mono text-tx-primary focus:border-accent outline-none"
+                               [ngModel]="editDraft()?.buttonColor ?? ''"
+                               (ngModelChange)="updateDraft('buttonColor', $event || undefined)"
+                               placeholder="e.g. #4f46e5 or leave blank for default" />
+                      </div>
+
+                      <!-- Stream/BG toggle (moved inside edit panel) -->
+                      <div class="pt-2 border-t border-border-subtle">
+                        <div class="text-[10px] text-tx-muted font-medium mb-2">Run mode</div>
+                        <div class="flex rounded border border-border-default overflow-hidden text-[10px] w-fit">
+                          <button class="px-3 py-1.5 transition-colors"
+                                  [class]="getRunMode(action.id) === 'stream'
+                                    ? 'bg-bg-overlay text-tx-primary font-medium'
+                                    : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
+                                  (click)="setRunMode(action.id, 'stream')">Stream</button>
+                          <span class="border-l border-border-default"></span>
+                          <button class="px-3 py-1.5 transition-colors"
+                                  [class]="getRunMode(action.id) === 'background'
+                                    ? 'bg-bg-overlay text-tx-primary font-medium'
+                                    : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
+                                  (click)="setRunMode(action.id, 'background')">Background</button>
                         </div>
                       </div>
 
@@ -663,6 +678,27 @@
                         }
                       </div>
 
+                      <!-- Move action between base/local-user -->
+                      <div class="pt-2 border-t border-border-subtle">
+                        <div class="text-[10px] text-tx-muted font-medium mb-2">Action location</div>
+                        @if (action.isLocalUser) {
+                          <div class="flex items-center gap-2">
+                            <span class="text-[10px] text-orange-400 font-medium flex items-center gap-1">
+                              <span class="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>
+                              Local-user action
+                            </span>
+                            <button class="text-[10px] text-tx-secondary hover:text-tx-primary px-2 py-1 rounded border border-border-default hover:border-border-strong transition-colors"
+                                    (click)="moveAction(action.id, false)">Move to base repo</button>
+                          </div>
+                        } @else {
+                          <div class="flex items-center gap-2">
+                            <span class="text-[10px] text-tx-muted font-medium">Base repo action</span>
+                            <button class="text-[10px] text-orange-400 hover:text-orange-300 px-2 py-1 rounded border border-orange-500/30 hover:border-orange-500/50 transition-colors"
+                                    (click)="moveAction(action.id, true)">Move to local-user</button>
+                          </div>
+                        }
+                      </div>
+
                       <div class="flex gap-2 pt-1">
                         <button class="px-3 py-1.5 rounded bg-accent text-tx-inverse text-xs font-medium hover:bg-accent-light transition-colors"
                                 (click)="saveEdit()">Save</button>
@@ -691,7 +727,7 @@
               }
             </div>
 
-            <!-- Add new action form -->
+            <!-- Add new action form (full editor like Edit panel) -->
             @if (addingAction()) {
               <div class="mt-4 rounded-lg border border-accent-border bg-bg-surface p-4">
                 <div class="text-xs font-semibold text-tx-primary mb-3">New Action</div>
@@ -718,6 +754,25 @@
                            [ngModel]="newActionDraft().description ?? ''"
                            (ngModelChange)="newActionDraft.update(d => ({ ...d, description: $event }))" />
                   </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-[10px] text-tx-muted mb-1">Icon</label>
+                      <select class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                              [ngModel]="newActionDraft().icon || 'play'"
+                              (ngModelChange)="newActionDraft.update(d => ({ ...d, icon: $event }))">
+                        @for (iconKey of iconOptions; track iconKey) {
+                          <option [value]="iconKey">{{ iconKey }}</option>
+                        }
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-[10px] text-tx-muted mb-1">Button color</label>
+                      <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs font-mono text-tx-primary focus:border-accent outline-none"
+                             [ngModel]="newActionDraft().buttonColor ?? ''"
+                             (ngModelChange)="newActionDraft.update(d => ({ ...d, buttonColor: $event || undefined }))"
+                             placeholder="e.g. #4f46e5" />
+                    </div>
+                  </div>
                   <div>
                     <label class="block text-[10px] text-tx-muted mb-1">Run command</label>
                     <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs font-mono text-tx-primary focus:border-accent outline-none"
@@ -725,9 +780,38 @@
                            (ngModelChange)="newActionDraft.update(d => ({ ...d, runCommand: $event }))"
                            placeholder="e.g. pnpm run dev" />
                   </div>
+                  <div>
+                    <label class="block text-[10px] text-tx-muted mb-1">Stop command (optional)</label>
+                    <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs font-mono text-tx-primary focus:border-accent outline-none"
+                           [ngModel]="newActionDraft().stopCommand ?? ''"
+                           (ngModelChange)="newActionDraft.update(d => ({ ...d, stopCommand: $event || null }))"
+                           placeholder="leave blank to use SIGTERM" />
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-[10px] text-tx-muted mb-1">Run label</label>
+                      <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                             [ngModel]="newActionDraft().runLabel ?? 'Run'"
+                             (ngModelChange)="newActionDraft.update(d => ({ ...d, runLabel: $event }))" />
+                    </div>
+                    <div>
+                      <label class="block text-[10px] text-tx-muted mb-1">Stop label</label>
+                      <input class="w-full bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none"
+                             [ngModel]="newActionDraft().stopLabel ?? 'Stop'"
+                             (ngModelChange)="newActionDraft.update(d => ({ ...d, stopLabel: $event }))" />
+                    </div>
+                  </div>
+                  <div class="pt-2 border-t border-border-subtle">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" class="rounded border-border-default accent-orange-500"
+                             [ngModel]="newActionDraft().isLocalUser ?? true"
+                             (ngModelChange)="newActionDraft.update(d => ({ ...d, isLocalUser: $event }))" />
+                      <span class="text-[10px] text-tx-secondary">Save as local-user action (not committed to repo)</span>
+                    </label>
+                  </div>
                   <div class="flex gap-2 pt-1">
                     <button class="px-3 py-1.5 rounded bg-accent text-tx-inverse text-xs font-medium hover:bg-accent-light transition-colors disabled:opacity-50"
-                            [disabled]="!newActionDraft().runCommand"
+                            [disabled]="!newActionDraft().runCommand || !newActionDraft().id"
                             (click)="saveNewAction()">Create</button>
                     <button class="px-3 py-1.5 rounded border border-border-default bg-bg-raised text-tx-secondary text-xs hover:text-tx-primary transition-colors"
                             (click)="cancelAddAction()">Cancel</button>
@@ -805,7 +889,7 @@
                 <input type="checkbox"
                        class="rounded border-border-default accent-accent"
                        [ngModel]="showEndedInstances()"
-                       (ngModelChange)="showEndedInstances.set($event)" />
+                       (ngModelChange)="toggleShowEndedInstances($event)" />
                 Show ended runs
               </label>
               <button class="text-xs px-2.5 py-1.5 rounded border border-border-default text-tx-secondary hover:text-tx-primary hover:border-border-strong transition-colors"
