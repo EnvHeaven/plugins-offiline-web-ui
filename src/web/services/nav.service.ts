@@ -23,8 +23,8 @@ export class NavService {
   readonly activeDetailTab = computed(() => this.state().detailTab);
 
   constructor() {
-    this.restoreFromHash();
-    window.addEventListener("hashchange", () => this.restoreFromHash());
+    this.restoreFromPath();
+    window.addEventListener("popstate", () => this.restoreFromPath());
   }
 
   navigate(view: ViewId, artifactId?: string): void {
@@ -34,43 +34,45 @@ export class NavService {
       artifactId: artifactId ?? s.artifactId,
       detailTab: "overview",
     }));
-    this.syncHash();
+    this.syncPath();
   }
 
   openArtifactDetail(artifactId: string, tab: NavState["detailTab"] = "overview"): void {
     this.state.set({ view: "detail", artifactId, detailTab: tab });
-    this.syncHash();
+    this.syncPath();
   }
 
   setDetailTab(tab: NavState["detailTab"]): void {
     this.state.update((s) => ({ ...s, detailTab: tab }));
-    this.syncHash();
+    this.syncPath(true);
   }
 
   goBack(): void {
     this.state.update((s) => ({ ...s, view: "artifacts", artifactId: null }));
-    this.syncHash();
+    this.syncPath();
   }
 
-  private syncHash(): void {
+  private syncPath(replace = false): void {
     const s = this.state();
-    let hash = "";
+    let path = "/";
     if (s.view === "detail" && s.artifactId) {
-      hash = `#/artifact/${encodeURIComponent(s.artifactId)}/${s.detailTab}`;
+      path = `/artifact/${encodeURIComponent(s.artifactId)}/${s.detailTab}`;
     } else if (s.view === "settings") {
-      hash = "#/settings";
+      path = "/settings";
     } else if (s.view === "artifacts") {
-      hash = "#/artifacts";
-    } else {
-      hash = "#/";
+      path = "/artifacts";
     }
-    if (location.hash !== hash) {
-      history.replaceState(null, "", hash);
+    if (location.pathname !== path) {
+      if (replace) {
+        history.replaceState(null, "", path);
+      } else {
+        history.pushState(null, "", path);
+      }
     }
   }
 
-  private restoreFromHash(): void {
-    const raw = location.hash.replace(/^#\/?/, "");
+  private restoreFromPath(): void {
+    const raw = location.pathname.replace(/^\/+/, "");
     if (!raw) return;
 
     const parts = raw.split("/").filter(Boolean);

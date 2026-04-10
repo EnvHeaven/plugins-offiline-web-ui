@@ -10,7 +10,7 @@ const { extname, join, resolve } = require("path");
 const net = require("net");
 
 const PORT = parseInt(process.env.PORT || "5000", 10);
-const BASE_PATH = (process.env.BASE_PATH || "/envheaven-ui/").replace(/\/+$/, "");
+const BASE_PATH = (process.env.BASE_PATH || "/").replace(/\/+$/, "");
 const DAEMON_URL =
   process.env.ENVHEAVEN_DAEMON_URL ||
   process.env.EH_DAEMON_URL ||
@@ -162,7 +162,7 @@ server.on("error", (err) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`EnvHeaven Offline Web UI → http://0.0.0.0:${PORT}${BASE_PATH}/`);
+  console.log(`EnvHeaven Offline Web UI → http://0.0.0.0:${PORT}/`);
   console.log(`Daemon proxy target       → ${DAEMON_URL}`);
   console.log(`Serving Angular build     → ${BROWSER_DIR}`);
   console.log(`[start.js] Listening — ready`);
