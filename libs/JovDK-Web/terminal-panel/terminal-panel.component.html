@@ -1,0 +1,11 @@
+<div class="terminal-wrapper">
+  <div #terminalHost class="terminal-host"></div>
+  @if (!connected() && !ended()) {
+    <div class="terminal-overlay">
+      <div class="flex items-center gap-2 text-xs text-tx-muted">
+        <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+        Connecting…
+      </div>
+    </div>
+  }
+</div>

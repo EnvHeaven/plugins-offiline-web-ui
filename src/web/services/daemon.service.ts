@@ -74,6 +74,7 @@ export interface ActionDefinition {
   pageHeaderOptions?: PageHeaderOptions;
   isLocalUser?: boolean;
   buttonColor?: string;
+  terminalMode?: "pty" | "pipe";
 }
 
 export interface ConsoleLogEntry {
@@ -91,6 +92,7 @@ export interface ActionRunEntry {
   startedAt: Date;
   helpers: ActionHelper[];
   logs: ConsoleLogEntry[];
+  terminalMode: "pty" | "pipe";
 }
 
 @Injectable({ providedIn: "root" })
@@ -314,6 +316,21 @@ export class DaemonService {
     }
   }
 
+  registerPtyRun(runId: string, actionId: string, actionLabel: string): void {
+    const entry: ActionRunEntry = {
+      runId,
+      actionId,
+      actionLabel,
+      status: "running",
+      exitCode: null,
+      startedAt: new Date(),
+      helpers: [],
+      logs: [],
+      terminalMode: "pty",
+    };
+    this.actionRuns.update((runs) => [entry, ...runs]);
+  }
+
   streamAction(runId: string, actionId: string, actionLabel: string): void {
     const entry: ActionRunEntry = {
       runId,
@@ -324,6 +341,7 @@ export class DaemonService {
       startedAt: new Date(),
       helpers: [],
       logs: [],
+      terminalMode: "pipe",
     };
     this.actionRuns.update((runs) => [entry, ...runs]);
 
@@ -399,6 +417,7 @@ export class DaemonService {
           text: "[background] Process launched in background (non-blocking). Output not streamed.",
         },
       ],
+      terminalMode: "pipe",
     };
     this.actionRuns.update((runs) => [entry, ...runs]);
   }
@@ -444,6 +463,7 @@ export class DaemonService {
           startedAt: string;
           helpers: ActionHelper[];
           lines: Array<{ stream: string; data: string; ts: string }>;
+          terminalMode?: "pty" | "pipe";
         }>;
       }>("/api/actions/runs/logs");
 
@@ -466,6 +486,7 @@ export class DaemonService {
             stream: l.stream as ConsoleLogEntry["stream"],
             text: l.data,
           })),
+          terminalMode: run.terminalMode ?? "pipe",
         };
         this.actionRuns.update((runs) => [...runs, entry]);
       }

@@ -10,7 +10,7 @@ import {
   PageHeaderOptions,
 } from "../services/daemon.service";
 import { NavService } from "../services/nav.service";
-import { VersionPanelComponent } from "@jovdk-web";
+import { VersionPanelComponent, TerminalPanelComponent, TerminalExitEvent } from "@jovdk-web";
 
 type DetailTab = "overview" | "versions" | "actions" | "tree" | "logs";
 type RunMode = "stream" | "background";
@@ -48,7 +48,7 @@ const ICON_PATHS: Record<string, string> = {
 @Component({
   selector: "eh-artifact-detail",
   standalone: true,
-  imports: [FormsModule, VersionPanelComponent],
+  imports: [FormsModule, VersionPanelComponent, TerminalPanelComponent],
   templateUrl: './artifact-detail.component.html',
   styleUrl: './artifact-detail.component.css',
 })
@@ -116,6 +116,14 @@ export class ArtifactDetailComponent {
   // Metadata editing
   readonly metaEditing = signal(false);
   readonly metaDraft = signal<ArtifactMeta>({});
+
+  // Active PTY terminal run for the Dev Tools tab
+  readonly activePtyRunId = signal<string | null>(null);
+
+  readonly activePtyRun = computed(() => {
+    const id = this.activePtyRunId();
+    return id ? this.daemon.actionRuns().find((r) => r.runId === id) ?? null : null;
+  });
 
   // Dev Tools console
   readonly selectedConsoleSource = signal<string>("daemon");
@@ -236,23 +244,28 @@ export class ArtifactDetailComponent {
 
   // ── Dev Tools: switch console source with per-source scroll restore ──
   switchConsoleSource(sourceId: string): void {
-    // Save current scroll position for the current source
     const el = this.logPane()?.nativeElement as HTMLElement | undefined;
     if (el) {
       this.sourceScrollPositions.set(this.selectedConsoleSource(), el.scrollTop);
     }
     this.selectedConsoleSource.set(sourceId);
-    // Restore or scroll-to-bottom for the incoming source
-    setTimeout(() => {
-      const newEl = this.logPane()?.nativeElement as HTMLElement | undefined;
-      if (!newEl) return;
-      const saved = this.sourceScrollPositions.get(sourceId);
-      if (saved !== undefined) {
-        newEl.scrollTop = saved;
-      } else {
-        newEl.scrollTop = newEl.scrollHeight;
-      }
-    }, 0);
+
+    const run = this.daemon.actionRuns().find((r) => r.runId === sourceId);
+    if (run?.terminalMode === "pty") {
+      this.activePtyRunId.set(sourceId);
+    } else {
+      this.activePtyRunId.set(null);
+      setTimeout(() => {
+        const newEl = this.logPane()?.nativeElement as HTMLElement | undefined;
+        if (!newEl) return;
+        const saved = this.sourceScrollPositions.get(sourceId);
+        if (saved !== undefined) {
+          newEl.scrollTop = saved;
+        } else {
+          newEl.scrollTop = newEl.scrollHeight;
+        }
+      }, 0);
+    }
   }
 
   // ── Repo helpers ─────────────────────────────────────────────────────
@@ -308,22 +321,44 @@ export class ArtifactDetailComponent {
   async runAction(actionId: string): Promise<void> {
     const action = this.daemon.actions().find((a) => a.id === actionId);
     if (!action) return;
+    const isPty = (action.terminalMode ?? "pty") === "pty";
     const mode = this.getRunMode(actionId);
     const background = mode === "background";
     const variantId = this.getSelectedVariant(actionId) || undefined;
     const runId = await this.daemon.dispatchAction(actionId, { background, variantId });
     if (runId) {
-      if (!background) {
+      if (isPty) {
+        this.daemon.registerPtyRun(runId, actionId, action.label);
+        this.activePtyRunId.set(runId);
+        this.selectedConsoleSource.set(runId);
+      } else if (!background) {
         this.daemon.streamAction(runId, actionId, action.label);
-        // Switch to the new run's source, resetting its scroll to bottom
         this.sourceScrollPositions.delete(runId);
         this.selectedConsoleSource.set(runId);
       } else {
-        // Register background run in Dev Tools so it appears in the source list
         this.daemon.registerBackgroundRun(runId, actionId, action.label);
         this.daemon.addNotification("info", "Launched in background", `Action '${action.label}' is running in background (non-blocking).`);
       }
     }
+  }
+
+  onTerminalExited(event: TerminalExitEvent): void {
+    this.daemon.actionRuns.update((runs) =>
+      runs.map((r) =>
+        r.runId === event.runId
+          ? { ...r, status: event.status as "success" | "error" | "stopped", exitCode: event.exitCode }
+          : r
+      )
+    );
+  }
+
+  openTerminalForRun(runId: string): void {
+    this.activePtyRunId.set(runId);
+    this.selectedConsoleSource.set(runId);
+  }
+
+  closePtyTerminal(): void {
+    this.activePtyRunId.set(null);
   }
 
   async stopAction(runId: string): Promise<void> {

@@ -394,7 +394,19 @@
 
                   <!-- Live run output panels -->
                   @if (latestRunForAction(action.id); as run) {
-                    @if (run.status === 'running') {
+                    @if (run.status === 'running' && run.terminalMode === 'pty') {
+                      <div class="mx-2 mb-2 rounded-md border border-border-subtle bg-bg-base p-3">
+                        <div class="flex items-center gap-2">
+                          <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+                          <span class="text-xs text-tx-secondary font-medium">Running (PTY)</span>
+                          <span class="text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent-light font-mono">Interactive</span>
+                          <button class="ml-auto text-[10px] px-2.5 py-1 rounded border border-accent-border bg-accent/10 text-accent-light hover:bg-accent/20 transition-colors"
+                                  (click)="openTerminalForRun(run.runId); nav.setActiveDetailTab('logs')">Open terminal</button>
+                          <button class="text-[10px] px-2 py-0.5 rounded border border-danger/30 text-red-400 hover:bg-danger/10 transition-colors"
+                                  (click)="stopAction(run.runId)">Stop</button>
+                        </div>
+                      </div>
+                    } @else if (run.status === 'running') {
                       <div class="mx-2 mb-2 rounded-md border border-border-subtle bg-bg-base p-3">
                         <div class="flex items-center gap-2 mb-2">
                           <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
@@ -555,6 +567,23 @@
                                [ngModel]="editDraft()?.buttonColor ?? ''"
                                (ngModelChange)="updateDraft('buttonColor', $event || undefined)"
                                placeholder="e.g. #4f46e5 or leave blank for default" />
+                      </div>
+
+                      <!-- Terminal mode toggle -->
+                      <div>
+                        <label class="block text-[10px] text-tx-muted mb-1">Terminal mode</label>
+                        <div class="flex rounded border border-border-default overflow-hidden text-[10px] w-fit">
+                          <button class="px-3 py-1.5 transition-colors"
+                                  [class]="(editDraft()?.terminalMode ?? 'pty') === 'pty'
+                                    ? 'bg-accent/20 text-accent-light font-medium'
+                                    : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
+                                  (click)="updateDraft('terminalMode', 'pty')">PTY (interactive)</button>
+                          <button class="px-3 py-1.5 transition-colors border-l border-border-default"
+                                  [class]="editDraft()?.terminalMode === 'pipe'
+                                    ? 'bg-bg-overlay text-tx-primary font-medium'
+                                    : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
+                                  (click)="updateDraft('terminalMode', 'pipe')">Pipe (legacy)</button>
+                        </div>
                       </div>
 
                       <!-- Stream/BG toggle (moved inside edit panel) -->
@@ -905,32 +934,43 @@
                   <span class="w-3 h-3 rounded-full bg-accent/50"></span>
                 </div>
                 <span class="text-xs text-tx-muted font-mono">{{ activeSourceLabel() }}</span>
-                @if (isActiveSourceLive()) {
+                @if (activePtyRunId()) {
+                  <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent-light font-mono">PTY</span>
+                  <button class="ml-auto text-xs px-2 py-1 rounded border border-border-default text-tx-secondary hover:text-tx-primary transition-colors"
+                          (click)="closePtyTerminal()">Close terminal</button>
+                } @else if (isActiveSourceLive()) {
                   <span class="ml-auto flex items-center gap-1 text-xs text-accent-light">
                     <span class="w-1.5 h-1.5 rounded-full bg-accent status-pulse"></span>
                     Live
                   </span>
                 }
               </div>
-              <!-- Scrollable log entries -->
-              <div class="flex-1 p-4 overflow-y-auto space-y-1" #logPane>
-                @for (entry of activeConsoleLogs(); track $index) {
-                  <div class="flex items-start gap-3 text-xs">
-                    <span class="text-tx-disabled flex-shrink-0 font-mono w-16">{{ entry.ts }}</span>
-                    <span class="text-[10px] px-1 py-px rounded flex-shrink-0 font-mono"
-                          [class]="entry.stream === 'stderr' ? 'bg-danger/20 text-red-400' : 'bg-bg-overlay text-tx-disabled'">
-                      {{ entry.stream }}
-                    </span>
-                    <span class="flex-1 break-all"
-                          [class]="entry.level === 'error' ? 'text-red-400' : entry.level === 'warn' ? 'text-yellow-400' : entry.level === 'success' ? 'text-accent-light' : 'text-tx-secondary'">
-                      {{ entry.text }}
-                    </span>
-                  </div>
-                }
-                @if (activeConsoleLogs().length === 0) {
-                  <div class="text-xs text-tx-disabled italic">No output yet…</div>
-                }
-              </div>
+              <!-- PTY xterm.js terminal -->
+              @if (activePtyRunId(); as ptyId) {
+                <div class="flex-1">
+                  <jov-terminal-panel [runId]="ptyId" [daemonPort]="42990" (exited)="onTerminalExited($event)"></jov-terminal-panel>
+                </div>
+              } @else {
+                <!-- Scrollable log entries -->
+                <div class="flex-1 p-4 overflow-y-auto space-y-1" #logPane>
+                  @for (entry of activeConsoleLogs(); track $index) {
+                    <div class="flex items-start gap-3 text-xs">
+                      <span class="text-tx-disabled flex-shrink-0 font-mono w-16">{{ entry.ts }}</span>
+                      <span class="text-[10px] px-1 py-px rounded flex-shrink-0 font-mono"
+                            [class]="entry.stream === 'stderr' ? 'bg-danger/20 text-red-400' : 'bg-bg-overlay text-tx-disabled'">
+                        {{ entry.stream }}
+                      </span>
+                      <span class="flex-1 break-all"
+                            [class]="entry.level === 'error' ? 'text-red-400' : entry.level === 'warn' ? 'text-yellow-400' : entry.level === 'success' ? 'text-accent-light' : 'text-tx-secondary'">
+                        {{ entry.text }}
+                      </span>
+                    </div>
+                  }
+                  @if (activeConsoleLogs().length === 0) {
+                    <div class="text-xs text-tx-disabled italic">No output yet…</div>
+                  }
+                </div>
+              }
             </div>
           </div>
         }
