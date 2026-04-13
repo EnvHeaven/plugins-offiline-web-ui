@@ -129,7 +129,8 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
           });
         }
         if (msg.type === 'error') {
-          term.write(`\r\n\x1b[31m[error: ${msg.data ?? 'unknown'}]\x1b[0m\r\n`);
+          const errText = (msg as { message?: string }).message ?? msg.data ?? 'unknown';
+          term.write(`\r\n\x1b[31m[error: ${errText}]\x1b[0m\r\n`);
         }
       } catch { /* ignore */ }
     });
