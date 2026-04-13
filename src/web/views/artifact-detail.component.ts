@@ -336,12 +336,13 @@ export class ArtifactDetailComponent {
   async runAction(actionId: string): Promise<void> {
     const action = this.daemon.actions().find((a) => a.id === actionId);
     if (!action) return;
-    const isPty = (action.terminalMode ?? "pty") === "pty";
     const mode = this.getRunMode(actionId);
     const background = mode === "background";
     const variantId = this.getSelectedVariant(actionId) || undefined;
-    const runId = await this.daemon.dispatchAction(actionId, { background, variantId });
-    if (runId) {
+    const result = await this.daemon.dispatchAction(actionId, { background, variantId });
+    if (result) {
+      const { runId, terminalMode } = result;
+      const isPty = terminalMode === "pty";
       if (isPty) {
         this.daemon.registerPtyRun(runId, actionId, action.label);
         this.activePtyRunId.set(runId);

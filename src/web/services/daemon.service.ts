@@ -300,15 +300,18 @@ export class DaemonService {
   async dispatchAction(
     actionId: string,
     options: { background?: boolean; variantId?: string } = {}
-  ): Promise<string | null> {
+  ): Promise<{ runId: string; terminalMode: "pty" | "pipe" } | null> {
     try {
-      const payload = await postJsonRead<{ runId: string }>("/api/actions/dispatch", {
+      const payload = await postJsonRead<{ runId: string; terminalMode?: "pty" | "pipe"; ptyUnavailable?: boolean }>("/api/actions/dispatch", {
         actionId,
         repoRoot: this.activeRepoPath(),
         background: options.background ?? false,
         ...(options.variantId ? { variantId: options.variantId } : {}),
       });
-      return payload.runId;
+      if (payload.ptyUnavailable) {
+        this.addNotification("info", "PTY unavailable", "node-pty native bindings are missing — action running in pipe mode. Run `pnpm approve-builds` in the EnvHeaven workspace to enable PTY support.");
+      }
+      return { runId: payload.runId, terminalMode: payload.terminalMode ?? "pty" };
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to dispatch action.";
       this.addNotification("error", "Action dispatch failed", msg);
