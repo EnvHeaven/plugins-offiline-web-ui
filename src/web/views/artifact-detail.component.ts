@@ -272,8 +272,8 @@ export class ArtifactDetailComponent {
     await this.daemon.saveVersionAndReturn({ ...ver, nextVersion });
   }
 
-  async incrementVersionByName(artifactName: string): Promise<void> {
-    await this.daemon.incrementVersionApi(artifactName);
+  async incrementVersionByName(artifactName: string, track: 'patch' | 'minor' | 'exp' = 'patch'): Promise<void> {
+    await this.daemon.incrementVersionApi(artifactName, track);
   }
 
   // ── Metadata edit ─────────────────────────────────────────────────────

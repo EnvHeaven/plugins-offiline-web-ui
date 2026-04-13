@@ -1,0 +1,26 @@
+kind = "web"
+previewPath = "/envheaven-ui/"
+title = "EnvHeaven Offline Web UI"
+version = "1.0.0"
+id = "envheaven-offline-web-ui-01"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/envheaven-ui/" ]
+localPort = 24454
+
+[services.development]
+run = "node start.js"
+
+[services.production]
+serve = "static"
+publicDir = "artifacts/envheaven-eh-env-eh-pkg-01/artifacts/envheaven-pkg-plugin-offiline-web-ui-01/dist/browser"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24454"
+BASE_PATH = "/envheaven-ui/"

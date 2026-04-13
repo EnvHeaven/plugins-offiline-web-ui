@@ -288,7 +288,7 @@
                   <jov-version-panel
                     [version]="version"
                     (versionSet)="saveVersionByName($event.artifactName, $event.nextVersion)"
-                    (versionIncremented)="incrementVersionByName($event.artifactName)"
+                    (versionIncremented)="incrementVersionByName($event.artifactName, $event.track)"
                   />
                 }
               </div>

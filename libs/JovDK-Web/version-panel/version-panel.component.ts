@@ -1,6 +1,8 @@
 import { Component, Input, Output, EventEmitter, signal, OnChanges, SimpleChanges } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
+export type IncrementTrack = 'patch' | 'minor' | 'exp';
+
 export interface VersionRecord {
   artifactName: string;
   packageName: string;
@@ -20,11 +22,12 @@ export class VersionPanelComponent implements OnChanges {
   @Input({ required: true }) version!: VersionRecord;
 
   @Output() versionSet = new EventEmitter<{ artifactName: string; nextVersion: string }>();
-  @Output() versionIncremented = new EventEmitter<{ artifactName: string }>();
+  @Output() versionIncremented = new EventEmitter<{ artifactName: string; track: IncrementTrack }>();
 
   readonly draftVersion = signal<string>('');
   readonly saving = signal(false);
   readonly incrementing = signal(false);
+  readonly activeTrack = signal<IncrementTrack | null>(null);
   readonly feedbackMsg = signal<string | null>(null);
   readonly feedbackKind = signal<'ok' | 'err'>('ok');
 
@@ -46,13 +49,16 @@ export class VersionPanelComponent implements OnChanges {
     }, 300);
   }
 
-  onIncrement(): void {
+  onIncrement(track: IncrementTrack = 'patch'): void {
     this.incrementing.set(true);
+    this.activeTrack.set(track);
     this.clearFeedback();
-    this.versionIncremented.emit({ artifactName: this.version.artifactName });
+    this.versionIncremented.emit({ artifactName: this.version.artifactName, track });
     setTimeout(() => {
       this.incrementing.set(false);
-      this.showFeedback('ok', 'Patch incremented');
+      this.activeTrack.set(null);
+      const labels: Record<IncrementTrack, string> = { patch: 'Patch', minor: 'Minor', exp: 'Exp' };
+      this.showFeedback('ok', `${labels[track]} incremented`);
     }, 300);
   }
 
