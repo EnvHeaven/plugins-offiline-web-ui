@@ -88,9 +88,24 @@ async function handleRequest(req, res) {
   }
 
   try {
-    const content = await fs.readFile(targetPath);
+    let content = await fs.readFile(targetPath);
+    const mimeType = MIME[extname(targetPath)] || "application/octet-stream";
+
+    // Rewrite <base href> so Angular requests assets under the correct sub-path.
+    // When BASE_PATH is "/envheaven-ui", assets must be at "/envheaven-ui/main.js"
+    // not at "/main.js" (which the Replit proxy won't route to this service).
+    if (BASE_PATH && extname(targetPath) === ".html") {
+      const baseHref = BASE_PATH.replace(/\/+$/, "") + "/";
+      content = Buffer.from(
+        content.toString("utf8").replace(
+          /<base href="[^"]*">/,
+          `<base href="${baseHref}">`
+        )
+      );
+    }
+
     res.statusCode = 200;
-    res.setHeader("content-type", MIME[extname(targetPath)] || "application/octet-stream");
+    res.setHeader("content-type", mimeType);
     res.setHeader("cache-control", "no-store");
     res.end(content);
   } catch (err) {
@@ -163,6 +178,7 @@ server.on("error", (err) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`EnvHeaven Offline Web UI → http://0.0.0.0:${PORT}/`);
+  console.log(`Base path (BASE_PATH)     → "${BASE_PATH || "(not set — will use /)"}"`);
   console.log(`Daemon proxy target       → ${DAEMON_URL}`);
   console.log(`Serving Angular build     → ${BROWSER_DIR}`);
   console.log(`[start.js] Listening — ready`);
