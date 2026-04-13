@@ -287,8 +287,8 @@
                 @for (version of daemon.versions(); track version.artifactName) {
                   <jov-version-panel
                     [version]="version"
-                    (versionSet)="saveVersionByName($event.artifactName, $event.nextVersion)"
-                    (versionIncremented)="incrementVersionByName($event.artifactName, $event.track)"
+                    (versionSet)="saveVersionByName($event.artifactName, $event.packageName, $event.nextVersion)"
+                    (versionIncremented)="incrementVersionByName($event.artifactName, $event.packageName, $event.track)"
                   />
                 }
               </div>

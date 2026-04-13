@@ -266,14 +266,14 @@ export class ArtifactDetailComponent {
   }
 
   // ── Version actions ──────────────────────────────────────────────────
-  async saveVersionByName(artifactName: string, nextVersion: string): Promise<void> {
-    const ver = this.daemon.versions().find((v) => v.artifactName === artifactName);
+  async saveVersionByName(artifactName: string, packageName: string, nextVersion: string): Promise<void> {
+    const ver = this.daemon.versions().find((v) => v.artifactName === artifactName && v.packageName === packageName);
     if (!ver) return;
     await this.daemon.saveVersionAndReturn({ ...ver, nextVersion });
   }
 
-  async incrementVersionByName(artifactName: string, track: 'patch' | 'minor' | 'exp' = 'patch'): Promise<void> {
-    await this.daemon.incrementVersionApi(artifactName, track);
+  async incrementVersionByName(artifactName: string, packageName: string, track: 'patch' | 'minor' | 'exp' = 'patch'): Promise<void> {
+    await this.daemon.incrementVersionApi(artifactName, packageName, track);
   }
 
   // ── Metadata edit ─────────────────────────────────────────────────────

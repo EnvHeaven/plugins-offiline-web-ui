@@ -21,8 +21,8 @@ export class VersionPanelComponent implements OnChanges {
 
   @Input({ required: true }) version!: VersionRecord;
 
-  @Output() versionSet = new EventEmitter<{ artifactName: string; nextVersion: string }>();
-  @Output() versionIncremented = new EventEmitter<{ artifactName: string; track: IncrementTrack }>();
+  @Output() versionSet = new EventEmitter<{ artifactName: string; packageName: string; nextVersion: string }>();
+  @Output() versionIncremented = new EventEmitter<{ artifactName: string; packageName: string; track: IncrementTrack }>();
 
   readonly draftVersion = signal<string>('');
   readonly saving = signal(false);
@@ -42,7 +42,7 @@ export class VersionPanelComponent implements OnChanges {
     if (!next) return;
     this.saving.set(true);
     this.clearFeedback();
-    this.versionSet.emit({ artifactName: this.version.artifactName, nextVersion: next });
+    this.versionSet.emit({ artifactName: this.version.artifactName, packageName: this.version.packageName, nextVersion: next });
     setTimeout(() => {
       this.saving.set(false);
       this.showFeedback('ok', `Saved → ${next}`);
@@ -53,7 +53,7 @@ export class VersionPanelComponent implements OnChanges {
     this.incrementing.set(true);
     this.activeTrack.set(track);
     this.clearFeedback();
-    this.versionIncremented.emit({ artifactName: this.version.artifactName, track });
+    this.versionIncremented.emit({ artifactName: this.version.artifactName, packageName: this.version.packageName, track });
     setTimeout(() => {
       this.incrementing.set(false);
       this.activeTrack.set(null);

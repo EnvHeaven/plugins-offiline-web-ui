@@ -488,16 +488,16 @@ export class DaemonService {
     this.addNotification("success", "Version saved", `${version.artifactName} → ${version.nextVersion ?? "?"}`);
   }
 
-  async incrementVersionApi(artifactName: string, track: 'patch' | 'minor' | 'exp' = 'patch'): Promise<void> {
+  async incrementVersionApi(artifactName: string, packageName: string, track: 'patch' | 'minor' | 'exp' = 'patch'): Promise<void> {
     const endpoints: Record<string, string> = {
       patch: "/api/versions/increment",
       minor: "/api/versions/increment-minor",
       exp: "/api/versions/increment-exp",
     };
     const endpoint = endpoints[track] ?? endpoints["patch"]!;
-    await postJson(endpoint, { repoRoot: this.activeRepoPath(), artifactName });
+    await postJson(endpoint, { repoRoot: this.activeRepoPath(), artifactName, packageName });
     await this.refreshVersions();
-    const updated = this.versions().find(v => v.artifactName === artifactName);
+    const updated = this.versions().find(v => v.artifactName === artifactName && v.packageName === packageName);
     const newVer = updated?.nextVersion ?? updated?.lastVersion ?? "?";
     const labels: Record<string, string> = { patch: "Patch", minor: "Minor", exp: "Exp" };
     this.addNotification("success", `${labels[track] ?? "Version"} incremented`, `${artifactName} → ${newVer}`);
