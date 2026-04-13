@@ -28,7 +28,6 @@ export interface TerminalExitEvent {
 })
 export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChanges {
   @Input({ required: true }) runId!: string;
-  @Input() daemonPort = 42990;
   @Output() exited = new EventEmitter<TerminalExitEvent>();
 
   @ViewChild('terminalHost', { static: true }) terminalHost!: ElementRef<HTMLDivElement>;
@@ -94,7 +93,8 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
     this.terminal = term;
     this.fitAddon = fitAddon;
 
-    const wsUrl = `ws://127.0.0.1:${this.daemonPort}/api/actions/terminal/${this.runId}`;
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${proto}//${window.location.host}/api/actions/terminal/${this.runId}`;
     const socket = new WebSocket(wsUrl);
     this.socket = socket;
 

@@ -45,7 +45,7 @@
           }
         </nav>
 
-        <!-- Daemon status strip (Docker Desktop style) -->
+        <!-- Service status strip (Docker Desktop style) -->
         <div class="px-4 py-3 border-t border-border-subtle flex-shrink-0">
           <div class="flex items-center gap-2">
             <div class="relative flex-shrink-0">
@@ -57,13 +57,13 @@
             </div>
             <div class="min-w-0 flex-1">
               <div class="text-[11px] font-medium text-tx-primary leading-tight">
-                {{ daemon.isConnected() ? 'Daemon running' : daemon.error() ? 'Daemon offline' : 'Connecting...' }}
+                {{ daemon.isConnected() ? 'Service running' : daemon.error() ? 'Service offline' : 'Connecting...' }}
               </div>
               @if (daemon.status()?.daemon?.port) {
                 <div class="text-[10px] text-tx-muted font-mono">localhost:{{ daemon.status()?.daemon?.port }}</div>
               }
-              <div class="text-[10px] text-tx-disabled font-mono">UI v{{ uiVersion }}</div>
-              <div class="text-[10px] text-tx-disabled font-mono">Daemon v{{ daemon.daemonVersion() ?? '–' }}</div>
+              <div class="text-[10px] text-tx-disabled font-mono">Offline GUI v{{ uiVersion }}</div>
+              <div class="text-[10px] text-tx-disabled font-mono">Service v{{ daemon.daemonVersion() ?? '–' }}</div>
             </div>
             <button class="w-5 h-5 flex items-center justify-center text-tx-muted hover:text-tx-secondary transition-colors flex-shrink-0"
                     title="Refresh"

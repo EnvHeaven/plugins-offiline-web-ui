@@ -128,6 +128,10 @@ export class ArtifactDetailComponent {
   // Dev Tools console
   readonly selectedConsoleSource = signal<string>("daemon");
   readonly showEndedInstances = signal(localStorage.getItem("eh:showEndedRuns") === "true");
+  readonly showHiddenSources = signal(false);
+  readonly hiddenSources = signal<Set<string>>(
+    new Set(JSON.parse(localStorage.getItem("eh:hiddenSources") || "[]")),
+  );
   readonly clearedSources = signal<Set<string>>(new Set());
 
   // Stored scroll positions per console source for independent restoration
@@ -137,7 +141,13 @@ export class ArtifactDetailComponent {
   readonly consoleSourceGroups = computed((): ConsoleSourceGroup[] => {
     const runs = this.daemon.actionRuns();
     const showEnded = this.showEndedInstances();
-    const filtered = runs.filter((r) => showEnded || r.status === "running");
+    const hidden = this.hiddenSources();
+    const showHidden = this.showHiddenSources();
+    const filtered = runs.filter((r) => {
+      if (!showEnded && r.status !== "running") return false;
+      if (!showHidden && hidden.has(r.runId)) return false;
+      return true;
+    });
 
     const map = new Map<string, ConsoleSourceGroup>();
     for (const r of filtered) {
@@ -147,6 +157,11 @@ export class ArtifactDetailComponent {
       map.get(r.actionId)!.runs.push({ id: r.runId, ts: r.startedAt, isEnded: r.status !== "running" });
     }
     return Array.from(map.values());
+  });
+
+  readonly isActiveSourceHidden = computed((): boolean => {
+    const source = this.selectedConsoleSource();
+    return this.hiddenSources().has(source);
   });
 
   readonly activeConsoleLogs = computed((): ConsoleDisplayEntry[] => {
@@ -178,7 +193,7 @@ export class ArtifactDetailComponent {
 
   readonly activeSourceLabel = computed((): string => {
     const source = this.selectedConsoleSource();
-    if (source === "daemon") return "daemon — notifications";
+    if (source === "daemon") return "service — notifications";
     const run = this.daemon.actionRuns().find((r) => r.runId === source);
     return run ? `${run.actionLabel} #${run.runId.slice(0, 6)}` : source;
   });
@@ -505,6 +520,36 @@ export class ArtifactDetailComponent {
   toggleShowEndedInstances(value: boolean): void {
     this.showEndedInstances.set(value);
     localStorage.setItem("eh:showEndedRuns", String(value));
+  }
+
+  toggleShowHiddenSources(value: boolean): void {
+    this.showHiddenSources.set(value);
+  }
+
+  hideActiveSource(): void {
+    const source = this.selectedConsoleSource();
+    if (source === "daemon") return;
+    this.hiddenSources.update((s) => {
+      const next = new Set(s);
+      next.add(source);
+      return next;
+    });
+    this.persistHiddenSources();
+    this.selectedConsoleSource.set("daemon");
+  }
+
+  unhideActiveSource(): void {
+    const source = this.selectedConsoleSource();
+    this.hiddenSources.update((s) => {
+      const next = new Set(s);
+      next.delete(source);
+      return next;
+    });
+    this.persistHiddenSources();
+  }
+
+  private persistHiddenSources(): void {
+    localStorage.setItem("eh:hiddenSources", JSON.stringify([...this.hiddenSources()]));
   }
 
   async moveAction(actionId: string, toLocalUser: boolean): Promise<void> {

@@ -425,6 +425,13 @@ export class DaemonService {
   async stopAction(runId: string): Promise<void> {
     try {
       await postJson(`/api/actions/stop/${runId}`, {});
+      this.actionRuns.update((runs) =>
+        runs.map((r) =>
+          r.runId === runId && r.status === "running"
+            ? { ...r, status: "stopped" as const, exitCode: -1 }
+            : r
+        )
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to stop action.";
       this.addNotification("error", "Stop failed", msg);

@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import * as http from "node:http";
+import * as net from "node:net";
 import * as path from "node:path";
 import type { OffilineWebUiCliOptions } from "./args";
 
@@ -14,6 +15,7 @@ export async function startOffilineWebUiServer(options: OffilineWebUiCliOptions)
   await assertBrowserBuildExists(browserDir);
 
   const basePath = await readBaseHref(browserDir);
+  const daemonParsed = new URL(options.daemonUrl);
 
   const server = http.createServer(async (request, response) => {
     try {
@@ -26,13 +28,28 @@ export async function startOffilineWebUiServer(options: OffilineWebUiCliOptions)
       const strippedPathname = stripBasePath(url.pathname, basePath);
 
       if (strippedPathname.startsWith("/api/")) {
-        await proxyDaemonRequest(request, response, options.daemonUrl, url, strippedPathname);
+        if (strippedPathname.startsWith("/api/actions/stream/")) {
+          proxyDaemonStream(request, response, daemonParsed, strippedPathname, url.search);
+        } else {
+          await proxyDaemonRequest(request, response, options.daemonUrl, url, strippedPathname);
+        }
         return;
       }
 
       await serveStaticAsset(response, browserDir, strippedPathname);
     } catch (error) {
       sendText(response, 500, error instanceof Error ? error.message : "Unknown UI server error.");
+    }
+  });
+
+  server.on("upgrade", (request, socket, head) => {
+    const urlPath = request.url ?? "/";
+    const strippedPath = stripBasePath(urlPath, basePath);
+
+    if (strippedPath === "/ws" || strippedPath.startsWith("/ws?") || strippedPath.startsWith("/api/actions/terminal/")) {
+      proxyWebSocketUpgrade(request, socket as net.Socket, head, daemonParsed, strippedPath);
+    } else {
+      socket.destroy();
     }
   });
 
@@ -52,11 +69,6 @@ export async function startOffilineWebUiServer(options: OffilineWebUiCliOptions)
   };
 }
 
-/**
- * Read <base href="..."> from index.html.
- * Returns a normalised prefix WITHOUT trailing slash, e.g. "/envheaven-ui".
- * Returns "" when base href is "/" or absent.
- */
 async function readBaseHref(browserDir: string): Promise<string> {
   try {
     const indexHtml = await fs.readFile(path.join(browserDir, "index.html"), "utf8");
@@ -70,13 +82,6 @@ async function readBaseHref(browserDir: string): Promise<string> {
   }
 }
 
-/**
- * Strip the basePath prefix from a pathname so the server can resolve
- * files relative to dist/browser root regardless of <base href>.
- *
- * e.g. basePath="/envheaven-ui", pathname="/envheaven-ui/main.js" → "/main.js"
- *      basePath="/envheaven-ui", pathname="/"                     → "/"
- */
 function stripBasePath(pathname: string, basePath: string): string {
   if (!basePath) return pathname;
   if (pathname === basePath || pathname === basePath + "/") return "/";
@@ -141,6 +146,83 @@ async function proxyDaemonRequest(
   response.end(bytes);
 }
 
+function proxyDaemonStream(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  daemon: URL,
+  pathname: string,
+  search: string,
+): void {
+  const targetPath = pathname + search;
+  const proxyReq = http.request(
+    {
+      hostname: daemon.hostname,
+      port: daemon.port,
+      path: targetPath,
+      method: request.method ?? "GET",
+      headers: {
+        ...filterRequestHeadersPlain(request.headers),
+        host: `${daemon.hostname}:${daemon.port}`,
+      },
+    },
+    (proxyRes) => {
+      response.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers);
+      proxyRes.pipe(response);
+    },
+  );
+
+  proxyReq.on("error", () => {
+    if (!response.headersSent) {
+      sendText(response, 502, "Daemon stream unavailable.");
+    }
+  });
+
+  request.on("close", () => {
+    proxyReq.destroy();
+  });
+
+  proxyReq.end();
+}
+
+function proxyWebSocketUpgrade(
+  request: http.IncomingMessage,
+  socket: net.Socket,
+  head: Buffer,
+  daemon: URL,
+  targetPath: string,
+): void {
+  const port = Number(daemon.port) || 80;
+  const proxySocket = net.connect({ host: daemon.hostname, port }, () => {
+    const reqLine = `GET ${targetPath} HTTP/1.1\r\n`;
+    const headers = Object.entries(request.headers)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
+      .join("\r\n");
+    proxySocket.write(reqLine + headers + "\r\n\r\n");
+    if (head.length > 0) {
+      proxySocket.write(head);
+    }
+    proxySocket.pipe(socket);
+    socket.pipe(proxySocket);
+  });
+
+  proxySocket.on("error", () => {
+    socket.destroy();
+  });
+
+  socket.on("error", () => {
+    proxySocket.destroy();
+  });
+
+  socket.on("close", () => {
+    proxySocket.destroy();
+  });
+
+  proxySocket.on("close", () => {
+    socket.destroy();
+  });
+}
+
 function filterRequestHeaders(headers: http.IncomingHttpHeaders): Headers {
   const forwarded = new Headers();
   for (const [key, value] of Object.entries(headers)) {
@@ -159,6 +241,15 @@ function filterRequestHeaders(headers: http.IncomingHttpHeaders): Headers {
   }
 
   return forwarded;
+}
+
+function filterRequestHeadersPlain(headers: http.IncomingHttpHeaders): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === "undefined") continue;
+    result[key] = Array.isArray(value) ? value.join(", ") : value;
+  }
+  return result;
 }
 
 async function readRequestBody(request: http.IncomingMessage): Promise<Buffer | undefined> {
