@@ -148,7 +148,8 @@ export class DaemonService {
     }
 
     const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${wsProtocol}//${location.host}/ws`;
+    const basePath = (document.querySelector("base")?.getAttribute("href") ?? "/").replace(/\/+$/, "");
+    const wsUrl = `${wsProtocol}//${location.host}${basePath}/ws`;
 
     try {
       this.ws = new WebSocket(wsUrl);
@@ -348,7 +349,7 @@ export class DaemonService {
     };
     this.actionRuns.update((runs) => [entry, ...runs]);
 
-    const es = new EventSource(`/api/actions/stream/${runId}`);
+    const es = new EventSource(apiUrl(`/api/actions/stream/${runId}`));
 
     es.onmessage = (event) => {
       try {
@@ -577,52 +578,76 @@ function deriveRepoName(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
+/**
+ * Resolve an absolute API path to a URL that is correctly routed in all
+ * hosting environments, including Replit's path-based proxy.
+ *
+ * In Replit, each artifact is served under a path prefix (e.g. /envheaven-ui/).
+ * Requests with a root-relative path like /api/status are intercepted by the
+ * proxy and routed to whichever artifact owns /api — NOT to this service.
+ * Prepending the document's <base href> ensures requests go through this
+ * service's server (start.js) where /api/* is proxied to the local daemon.
+ *
+ * Outside Replit (or when BASE_PATH is "/"), base is "/" and the path is
+ * unchanged, preserving normal local-dev behaviour.
+ */
+function apiUrl(path: string): string {
+  const base = (document.querySelector("base")?.getAttribute("href") ?? "/").replace(/\/+$/, "");
+  const safePath = path.startsWith("/") ? path : `/${path}`;
+  return base ? `${base}${safePath}` : safePath;
+}
+
 async function readJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+  const resolved = apiUrl(url);
+  const response = await fetch(resolved);
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${url}`);
+    throw new Error(`HTTP ${response.status} for ${resolved}`);
   }
   return (await response.json()) as T;
 }
 
 async function postJson(url: string, body: unknown): Promise<void> {
-  const response = await fetch(url, {
+  const resolved = apiUrl(url);
+  const response = await fetch(resolved, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await extractErrorMessage(response, url));
+    throw new Error(await extractErrorMessage(response, resolved));
   }
 }
 
 async function postJsonRead<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, {
+  const resolved = apiUrl(url);
+  const response = await fetch(resolved, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await extractErrorMessage(response, url));
+    throw new Error(await extractErrorMessage(response, resolved));
   }
   return (await response.json()) as T;
 }
 
 async function putJson(url: string, body: unknown): Promise<void> {
-  const response = await fetch(url, {
+  const resolved = apiUrl(url);
+  const response = await fetch(resolved, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await extractErrorMessage(response, url));
+    throw new Error(await extractErrorMessage(response, resolved));
   }
 }
 
 async function deleteReq(url: string): Promise<void> {
-  const response = await fetch(url, { method: "DELETE" });
+  const resolved = apiUrl(url);
+  const response = await fetch(resolved, { method: "DELETE" });
   if (!response.ok) {
-    throw new Error(await extractErrorMessage(response, url));
+    throw new Error(await extractErrorMessage(response, resolved));
   }
 }
 
