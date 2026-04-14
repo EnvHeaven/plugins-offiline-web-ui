@@ -225,9 +225,19 @@
         log('info', 'Probing API at: ' + apiProbeUrl);
         setStatus('Probing daemon API…');
 
-        // Probe the daemon API
-        fetch(apiProbeUrl)
+        // Probe the daemon API — Connection: close forces a fresh connection
+        // so a hanging response cannot block subsequent JS module fetches.
+        var probeAbort = new AbortController();
+        var probeTimer = setTimeout(function() {
+          probeAbort.abort();
+        }, 5000);
+
+        fetch(apiProbeUrl, {
+          signal: probeAbort.signal,
+          headers: { 'Connection': 'close', 'Cache-Control': 'no-cache' }
+        })
           .then(function(r) {
+            clearTimeout(probeTimer);
             var cls = r.ok ? 'ok' : 'warn';
             diagApi.className = 'diag-value ' + cls;
             diagApi.textContent = 'HTTP ' + r.status + ' ' + r.statusText;
@@ -240,9 +250,11 @@
             }
           })
           .catch(function(e) {
+            clearTimeout(probeTimer);
             diagApi.className = 'diag-value err';
-            diagApi.textContent = String(e);
-            log('err', 'API probe failed: ' + String(e));
+            var msg = e && e.name === 'AbortError' ? 'timeout after 5s (server not responding)' : String(e);
+            diagApi.textContent = msg;
+            log('err', 'API probe failed: ' + msg);
           });
 
         setProgress(25);
@@ -277,6 +289,29 @@
             log('err', 'Angular bootstrap error: ' + msg);
           }
         };
+
+        // Watchdog: if Angular hasn't bootstrapped after 10s, report stuck state
+        setTimeout(function() {
+          var ngVal = diagNg.textContent || '';
+          if (ngVal === 'pending…' || ngVal === '') {
+            diagNg.className = 'diag-value err';
+            diagNg.textContent = 'stuck (10s timeout)';
+            log('err', 'Angular did not bootstrap after 10s — JS bundle may have failed to load');
+            setStatus('Bootstrap timeout — check console for errors');
+          }
+        }, 10000);
+
+        // Catch JS module load errors (e.g. main.js 404, import failures)
+        window.addEventListener('error', function(evt) {
+          var src = (evt.target && evt.target.src) ? evt.target.src : null;
+          if (src) {
+            var short = src.replace(window.location.origin, '');
+            log('err', 'Script load failed: ' + short);
+            diagNg.className = 'diag-value err';
+            diagNg.textContent = 'script load failed: ' + short;
+            setStatus('Script load error — bundle missing or 404');
+          }
+        }, true);
       })();
     </script>
   </body>

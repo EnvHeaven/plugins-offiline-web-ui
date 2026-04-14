@@ -120,6 +120,8 @@ async function serveStaticAsset(response: http.ServerResponse, browserDir: strin
   }
 }
 
+const PROXY_TIMEOUT_MS = 5_000;
+
 async function proxyDaemonRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
@@ -129,18 +131,41 @@ async function proxyDaemonRequest(
 ): Promise<void> {
   const target = new URL(strippedPathname + url.search, daemonUrl);
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await readRequestBody(request);
-  const proxiedResponse = await fetch(target, {
-    method: request.method ?? "GET",
-    headers: filterRequestHeaders(request.headers),
-    body: body as BodyInit | undefined,
-  });
 
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), PROXY_TIMEOUT_MS);
+
+  let proxiedResponse: Response;
+  try {
+    proxiedResponse = await fetch(target, {
+      method: request.method ?? "GET",
+      headers: filterRequestHeaders(request.headers),
+      body: body as BodyInit | undefined,
+      signal: abort.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (!response.headersSent) {
+      const reason = err instanceof Error && err.name === "AbortError"
+        ? `Daemon timeout after ${PROXY_TIMEOUT_MS}ms`
+        : `Daemon unreachable: ${err instanceof Error ? err.message : String(err)}`;
+      response.statusCode = 503;
+      response.setHeader("content-type", "application/json; charset=utf-8");
+      response.setHeader("connection", "close");
+      response.end(JSON.stringify({ ok: false, error: reason }));
+    }
+    return;
+  }
+
+  clearTimeout(timer);
   response.statusCode = proxiedResponse.status;
   proxiedResponse.headers.forEach((value, key) => {
-    if (key.toLowerCase() !== "transfer-encoding") {
+    const lower = key.toLowerCase();
+    if (lower !== "transfer-encoding" && lower !== "connection") {
       response.setHeader(key, value);
     }
   });
+  response.setHeader("connection", "close");
 
   const bytes = new Uint8Array(await proxiedResponse.arrayBuffer());
   response.end(bytes);
