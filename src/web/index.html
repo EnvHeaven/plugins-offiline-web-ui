@@ -9,8 +9,275 @@
     <link rel="icon" type="image/png" href="assets/envheaven-logo.png" />
     <link rel="apple-touch-icon" href="assets/envheaven-logo.png" />
     <link rel="manifest" href="manifest.webmanifest" />
+
+    <style>
+      /* ── Splash screen ─────────────────────────────────────────────── */
+      #eh-splash {
+        position: fixed; inset: 0; z-index: 99999;
+        background: #0d0d12;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+        color: #e2e8f0;
+        transition: opacity 0.4s ease;
+      }
+      #eh-splash.fade-out { opacity: 0; pointer-events: none; }
+
+      .splash-logo {
+        width: 48px; height: 48px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        display: flex; align-items: center; justify-content: center;
+        margin-bottom: 16px;
+        box-shadow: 0 0 32px rgba(79,70,229,0.4);
+      }
+      .splash-logo svg { width: 28px; height: 28px; color: #fff; }
+
+      .splash-title {
+        font-size: 18px; font-weight: 700;
+        letter-spacing: 0.04em;
+        color: #f1f5f9;
+        margin-bottom: 6px;
+      }
+      .splash-version {
+        font-size: 11px; color: #64748b;
+        margin-bottom: 32px;
+      }
+
+      /* Progress bar */
+      .splash-progress-track {
+        width: 320px; height: 3px;
+        background: #1e1e2e;
+        border-radius: 99px;
+        overflow: hidden;
+        margin-bottom: 28px;
+      }
+      .splash-progress-bar {
+        height: 100%;
+        border-radius: 99px;
+        background: linear-gradient(90deg, #4f46e5, #7c3aed);
+        width: 0%;
+        transition: width 0.35s cubic-bezier(0.4,0,0.2,1);
+        box-shadow: 0 0 8px rgba(124,58,237,0.6);
+      }
+
+      /* Diagnostic panel */
+      .splash-diag {
+        width: 480px; max-width: 90vw;
+        background: #111118;
+        border: 1px solid #1e1e2e;
+        border-radius: 10px;
+        overflow: hidden;
+        font-size: 11px;
+      }
+      .splash-diag-header {
+        padding: 8px 14px;
+        background: #16161f;
+        border-bottom: 1px solid #1e1e2e;
+        color: #64748b;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .splash-diag-body {
+        padding: 12px 14px;
+        display: flex; flex-direction: column; gap: 6px;
+      }
+      .diag-row {
+        display: flex; align-items: flex-start; gap: 8px;
+      }
+      .diag-label {
+        color: #475569; min-width: 100px; flex-shrink: 0;
+        font-size: 10px; padding-top: 1px;
+      }
+      .diag-value {
+        color: #94a3b8; word-break: break-all;
+        line-height: 1.5;
+      }
+      .diag-value.ok   { color: #4ade80; }
+      .diag-value.warn { color: #facc15; }
+      .diag-value.err  { color: #f87171; }
+      .diag-value.dim  { color: #475569; font-style: italic; }
+
+      /* Log list */
+      .splash-log {
+        margin-top: 12px;
+        border-top: 1px solid #1e1e2e;
+        padding: 10px 14px 4px;
+        display: flex; flex-direction: column; gap: 4px;
+        max-height: 120px; overflow-y: auto;
+      }
+      .log-line {
+        font-size: 10px; color: #64748b;
+        display: flex; gap: 6px; align-items: baseline;
+      }
+      .log-line .ts  { color: #334155; flex-shrink: 0; }
+      .log-line .ok  { color: #4ade80; }
+      .log-line .err { color: #f87171; }
+      .log-line .info{ color: #818cf8; }
+
+      .splash-status-text {
+        margin-top: 16px;
+        font-size: 11px;
+        color: #475569;
+        letter-spacing: 0.03em;
+      }
+    </style>
   </head>
   <body class="bg-bg-base">
+
+    <!-- ── Loading splash ─────────────────────────────────── -->
+    <div id="eh-splash">
+      <div class="splash-logo">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+        </svg>
+      </div>
+      <div class="splash-title">EnvHeaven</div>
+      <div class="splash-version">Offline GUI — loading…</div>
+
+      <div class="splash-progress-track">
+        <div class="splash-progress-bar" id="eh-bar"></div>
+      </div>
+
+      <div class="splash-diag">
+        <div class="splash-diag-header">Diagnostics</div>
+        <div class="splash-diag-body">
+          <div class="diag-row">
+            <span class="diag-label">window.location</span>
+            <span class="diag-value" id="diag-loc">—</span>
+          </div>
+          <div class="diag-row">
+            <span class="diag-label">base href</span>
+            <span class="diag-value" id="diag-base">—</span>
+          </div>
+          <div class="diag-row">
+            <span class="diag-label">API probe URL</span>
+            <span class="diag-value" id="diag-api-url">—</span>
+          </div>
+          <div class="diag-row">
+            <span class="diag-label">API probe result</span>
+            <span class="diag-value dim" id="diag-api-result">pending…</span>
+          </div>
+          <div class="diag-row">
+            <span class="diag-label">Angular status</span>
+            <span class="diag-value dim" id="diag-ng">pending…</span>
+          </div>
+        </div>
+        <div class="splash-log" id="eh-log"></div>
+      </div>
+
+      <div class="splash-status-text" id="eh-status-text">Initialising…</div>
+    </div>
+    <!-- ── End splash ─────────────────────────────────────── -->
+
     <app-root></app-root>
+
+    <script>
+      // ── Splash controller ────────────────────────────────────────────
+      (function () {
+        var bar     = document.getElementById('eh-bar');
+        var logEl   = document.getElementById('eh-log');
+        var statusEl= document.getElementById('eh-status-text');
+        var diagNg  = document.getElementById('diag-ng');
+        var diagApi = document.getElementById('diag-api-result');
+        var diagApiUrl = document.getElementById('diag-api-url');
+        var progress = 0;
+
+        function setProgress(pct) {
+          progress = pct;
+          bar.style.width = pct + '%';
+        }
+
+        function setStatus(text) {
+          statusEl.textContent = text;
+        }
+
+        function log(kind, msg) {
+          var d = new Date();
+          var ts = d.toTimeString().slice(0, 8) + '.' + String(d.getMilliseconds()).padStart(3,'0');
+          var line = document.createElement('div');
+          line.className = 'log-line';
+          line.innerHTML = '<span class="ts">' + ts + '</span>'
+            + '<span class="' + kind + '">' + escHtml(msg) + '</span>';
+          logEl.appendChild(line);
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function escHtml(s) {
+          return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        // Fill in static path info immediately
+        document.getElementById('diag-loc').textContent  = window.location.href;
+        var baseEl = document.querySelector('base');
+        var baseHref = baseEl ? baseEl.getAttribute('href') : '(none)';
+        document.getElementById('diag-base').textContent = baseHref || '(empty)';
+
+        // Compute API probe URL the same way daemon.service.ts does
+        var baseTrimmed = (baseHref || '/').replace(/\/+$/, '');
+        var apiProbeUrl = (baseTrimmed || '') + '/api/status';
+        diagApiUrl.textContent = apiProbeUrl;
+
+        setProgress(10);
+        log('info', 'Page loaded — base href: ' + (baseHref || '(none)'));
+        log('info', 'Probing API at: ' + apiProbeUrl);
+        setStatus('Probing daemon API…');
+
+        // Probe the daemon API
+        fetch(apiProbeUrl)
+          .then(function(r) {
+            var cls = r.ok ? 'ok' : 'warn';
+            diagApi.className = 'diag-value ' + cls;
+            diagApi.textContent = 'HTTP ' + r.status + ' ' + r.statusText;
+            log(r.ok ? 'ok' : 'err', 'API probe → HTTP ' + r.status);
+            if (r.ok) {
+              return r.json().then(function(j) {
+                diagApi.textContent += ' — ' + JSON.stringify(j);
+                log('ok', 'Daemon response: ' + JSON.stringify(j));
+              }).catch(function() {});
+            }
+          })
+          .catch(function(e) {
+            diagApi.className = 'diag-value err';
+            diagApi.textContent = String(e);
+            log('err', 'API probe failed: ' + String(e));
+          });
+
+        setProgress(25);
+        setStatus('Loading Angular modules…');
+        log('info', 'Angular bootstrap starting…');
+
+        // Expose hooks for main.ts
+        window.__ehSplash = {
+          progress: setProgress,
+          status:   setStatus,
+          log:      log,
+          complete: function() {
+            diagNg.className = 'diag-value ok';
+            diagNg.textContent = 'bootstrapped ✓';
+            setProgress(100);
+            setStatus('Ready');
+            log('ok', 'Angular bootstrapped successfully');
+            setTimeout(function() {
+              var el = document.getElementById('eh-splash');
+              if (el) {
+                el.classList.add('fade-out');
+                setTimeout(function() { el.remove(); }, 450);
+              }
+            }, 600);
+          },
+          error: function(msg) {
+            diagNg.className = 'diag-value err';
+            diagNg.textContent = 'FAILED — see overlay';
+            bar.style.background = '#ef4444';
+            setProgress(100);
+            setStatus('Bootstrap failed');
+            log('err', 'Angular bootstrap error: ' + msg);
+          }
+        };
+      })();
+    </script>
   </body>
 </html>

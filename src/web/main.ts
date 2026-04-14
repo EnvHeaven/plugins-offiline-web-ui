@@ -2,6 +2,20 @@ import { bootstrapApplication } from "@angular/platform-browser";
 import { AppComponent } from "./app.component";
 import { provideAppEnvironmentInfo } from "@jovdk-web/core/environment/app-environment.token";
 
+// Splash controller injected by index.html — safe to call even if missing
+const splash = (window as unknown as Record<string, unknown>)["__ehSplash"] as {
+  progress: (pct: number) => void;
+  status:   (msg: string) => void;
+  log:      (kind: "info" | "ok" | "err", msg: string) => void;
+  complete: () => void;
+  error:    (msg: string) => void;
+} | undefined;
+
+function splashProgress(pct: number, msg?: string): void {
+  splash?.progress(pct);
+  if (msg) splash?.status(msg);
+}
+
 function showFatalError(message: string, detail: string): void {
   const div = document.createElement("div");
   div.style.cssText = [
@@ -15,11 +29,15 @@ function showFatalError(message: string, detail: string): void {
 
 window.addEventListener("error", (e) => {
   console.error("[EnvHeaven] Uncaught error:", e.error ?? e.message);
+  splash?.log("err", `Uncaught error: ${String(e.error ?? e.message)}`);
 });
 
 window.addEventListener("unhandledrejection", (e) => {
   console.error("[EnvHeaven] Unhandled rejection:", e.reason);
+  splash?.log("err", `Unhandled rejection: ${String(e.reason)}`);
 });
+
+splashProgress(40, "Bootstrapping Angular…");
 
 void bootstrapApplication(AppComponent, {
   providers: [
@@ -29,9 +47,14 @@ void bootstrapApplication(AppComponent, {
       isProduction: false,
     }),
   ],
+}).then(() => {
+  splashProgress(90, "Angular ready…");
+  splash?.log("ok", "AppComponent mounted");
+  splash?.complete();
 }).catch((error: unknown) => {
   const msg = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? (error.stack ?? "") : "";
   console.error("[EnvHeaven] Bootstrap failed:", error);
+  splash?.error(msg);
   showFatalError(msg, stack);
 });
