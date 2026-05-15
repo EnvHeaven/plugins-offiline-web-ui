@@ -53,8 +53,19 @@ export async function startOffilineWebUiServer(options: OffilineWebUiCliOptions)
     }
   });
 
-  await new Promise<void>((resolve) => {
-    server.listen(options.port, options.host, () => resolve());
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = (): void => {
+      server.off("error", onError);
+      resolve();
+    };
+
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(options.port, options.host);
   });
 
   const address = server.address();

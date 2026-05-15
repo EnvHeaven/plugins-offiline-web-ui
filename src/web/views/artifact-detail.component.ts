@@ -8,12 +8,14 @@ import {
   ActionHelper,
   ArtifactMeta,
   PageHeaderOptions,
+  RepoRecord,
 } from "../services/daemon.service";
 import { NavService } from "../services/nav.service";
 import { VersionPanelComponent, TerminalPanelComponent, TerminalExitEvent } from "@jovdk-web";
 
 type DetailTab = "overview" | "versions" | "actions" | "tree" | "logs";
 type RunMode = "stream" | "background";
+type ActionOrderScope = "actions" | "header";
 
 interface ConsoleDisplayEntry {
   ts: string;
@@ -26,6 +28,12 @@ interface ConsoleSourceGroup {
   actionId: string;
   actionLabel: string;
   runs: { id: string; ts: Date; isEnded: boolean }[];
+}
+
+interface ArtifactTreeRow {
+  repo: RepoRecord;
+  depth: number;
+  relation: "parent" | "current" | "child";
 }
 
 const ICON_PATHS: Record<string, string> = {
@@ -44,6 +52,40 @@ const ICON_PATHS: Record<string, string> = {
   git: "<path stroke-linecap='round' stroke-linejoin='round' d='M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4'/>",
   check: "<polyline points='20,6 9,17 4,12'/>",
 };
+
+function normalizeRepoPath(value: string): string {
+  const normalized = value.replace(/\\/g, "/").replace(/\/+$/g, "");
+  return normalized || "/";
+}
+
+function pathDepth(value: string): number {
+  return normalizeRepoPath(value).split("/").filter(Boolean).length;
+}
+
+function isAncestorPath(parentPath: string, childPath: string): boolean {
+  const parent = normalizeRepoPath(parentPath);
+  const child = normalizeRepoPath(childPath);
+  return parent !== child && child.startsWith(`${parent}/`);
+}
+
+function nearestKnownParent(repo: RepoRecord, repos: RepoRecord[]): RepoRecord | null {
+  const repoPath = normalizeRepoPath(repo.path);
+  return repos
+    .filter((candidate) => candidate.id !== repo.id && isAncestorPath(normalizeRepoPath(candidate.path), repoPath))
+    .sort((a, b) => pathDepth(b.path) - pathDepth(a.path))[0] ?? null;
+}
+
+function orderActions(actions: ActionDefinition[], actionIds: string[]): ActionDefinition[] {
+  const indexById = new Map(actionIds.map((id, index) => [id, index]));
+  return [...actions].sort((a, b) => {
+    const aIndex = indexById.get(a.id);
+    const bIndex = indexById.get(b.id);
+    if (aIndex !== undefined && bIndex !== undefined) return aIndex - bIndex;
+    if (aIndex !== undefined) return -1;
+    if (bIndex !== undefined) return 1;
+    return a.id.localeCompare(b.id);
+  });
+}
 
 @Component({
   selector: "eh-artifact-detail",
@@ -74,9 +116,57 @@ export class ArtifactDetailComponent {
     return this.daemon.repos().find((r) => r.id === id) ?? null;
   });
 
-  readonly sibling_repos = computed(() => {
-    const id = this.nav.selectedArtifactId();
-    return this.daemon.repos().filter((r) => r.id !== id);
+  readonly artifactTreeRows = computed(() => {
+    const current = this.artifact();
+    if (!current) return [];
+
+    const currentPath = normalizeRepoPath(current.path);
+    const visibleRepos = this.daemon.repos()
+      .filter((repo) => {
+        const repoPath = normalizeRepoPath(repo.path);
+        return repo.id === current.id || isAncestorPath(repoPath, currentPath) || isAncestorPath(currentPath, repoPath);
+      })
+      .sort((a, b) => {
+        const depthDiff = pathDepth(a.path) - pathDepth(b.path);
+        return depthDiff === 0 ? a.path.localeCompare(b.path) : depthDiff;
+      });
+
+    const visibleIds = new Set(visibleRepos.map((repo) => repo.id));
+    const childrenByParent = new Map<string, RepoRecord[]>();
+    const roots: RepoRecord[] = [];
+
+    for (const repo of visibleRepos) {
+      const parent = nearestKnownParent(repo, visibleRepos);
+      if (parent && visibleIds.has(parent.id)) {
+        const children = childrenByParent.get(parent.id) ?? [];
+        children.push(repo);
+        childrenByParent.set(parent.id, children);
+      } else {
+        roots.push(repo);
+      }
+    }
+
+    for (const children of childrenByParent.values()) {
+      children.sort((a, b) => a.path.localeCompare(b.path));
+    }
+
+    const rows: ArtifactTreeRow[] = [];
+    const visit = (repo: RepoRecord, depth: number) => {
+      rows.push({
+        repo,
+        depth,
+        relation: repo.id === current.id ? "current" : isAncestorPath(normalizeRepoPath(repo.path), currentPath) ? "parent" : "child",
+      });
+      for (const child of childrenByParent.get(repo.id) ?? []) {
+        visit(child, depth + 1);
+      }
+    };
+
+    for (const root of roots) {
+      visit(root, 0);
+    }
+
+    return rows;
   });
 
   private readonly autoSelectEffect = effect(() => {
@@ -90,6 +180,10 @@ export class ArtifactDetailComponent {
   readonly editingActionId = signal<string | null>(null);
   readonly editDraft = signal<ActionDefinition | null>(null);
   readonly confirmDeleteActionId = signal<string | null>(null);
+  readonly reorderingActions = signal(false);
+  readonly draggedActionId = signal<string | null>(null);
+  readonly draggedActionScope = signal<ActionOrderScope | null>(null);
+  readonly dragOverActionId = signal<string | null>(null);
 
   // New action form
   readonly addingAction = signal(false);
@@ -105,10 +199,9 @@ export class ArtifactDetailComponent {
     successHelpers: [],
     failHelpers: [],
     isLocalUser: true,
+    terminalMode: "pty",
+    runMode: "stream",
   });
-
-  // Run mode per action (stream vs background)
-  readonly runModes = signal<Record<string, RunMode>>({});
 
   // Selected variant per action (empty string = default)
   readonly selectedVariants = signal<Record<string, string>>({});
@@ -220,9 +313,17 @@ export class ArtifactDetailComponent {
     });
   }
 
+  // ── Ordered actions ──────────────────────────────────────────────────
+  readonly orderedActions = computed(() =>
+    orderActions(this.daemon.actions(), this.daemon.actionOrderIds())
+  );
+
   // ── Header actions (pinned to page header bar) ───────────────────────
   readonly headerActions = computed(() =>
-    this.daemon.actions().filter((a) => a.pageHeaderOptions?.isFixedOnHeader === true)
+    orderActions(
+      this.daemon.actions().filter((a) => a.pageHeaderOptions?.isFixedOnHeader === true),
+      this.daemon.headerActionOrderIds(),
+    )
   );
 
   getHeaderActionLabel(action: ActionDefinition): string {
@@ -233,19 +334,75 @@ export class ArtifactDetailComponent {
   }
 
   // ── Icon helper ──────────────────────────────────────────────────────
-  getIcon(name: string, size = "w-4 h-4"): SafeHtml {
+  getIcon(name: string, size = "w-4 h-4", strokeWidth = "1.5"): SafeHtml {
     const paths = ICON_PATHS[name || "play"] ?? ICON_PATHS["play"];
-    const svg = `<svg class="${size} text-tx-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">${paths}</svg>`;
+    const svg = `<svg class="${size}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="${strokeWidth}">${paths}</svg>`;
     return this.sanitizer.bypassSecurityTrustHtml(svg);
   }
 
   // ── Run mode ─────────────────────────────────────────────────────────
-  getRunMode(actionId: string): RunMode {
-    return this.runModes()[actionId] ?? "stream";
+  getRunMode(action: ActionDefinition): RunMode {
+    return action.runMode ?? "stream";
   }
 
-  setRunMode(actionId: string, mode: RunMode): void {
-    this.runModes.update((m) => ({ ...m, [actionId]: mode }));
+  toggleReorderingActions(): void {
+    this.reorderingActions.update((value) => !value);
+  }
+
+  startActionDrag(scope: ActionOrderScope, actionId: string, event: DragEvent): void {
+    if (scope === "actions" && !this.reorderingActions()) return;
+    this.draggedActionId.set(actionId);
+    this.draggedActionScope.set(scope);
+    this.dragOverActionId.set(null);
+    event.dataTransfer?.setData("text/plain", actionId);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+    }
+  }
+
+  moveActionDragOver(scope: ActionOrderScope, actionId: string, event: DragEvent): void {
+    if (this.draggedActionScope() !== scope || this.draggedActionId() === actionId) return;
+    event.preventDefault();
+    this.dragOverActionId.set(actionId);
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+  }
+
+  async dropAction(scope: ActionOrderScope, targetActionId: string, event: DragEvent): Promise<void> {
+    event.preventDefault();
+    const sourceActionId = this.draggedActionId();
+    if (!sourceActionId || this.draggedActionScope() !== scope || sourceActionId === targetActionId) {
+      this.endActionDrag();
+      return;
+    }
+
+    const actions = scope === "header" ? this.headerActions() : this.orderedActions();
+    const ids = actions.map((action) => action.id);
+    const sourceIndex = ids.indexOf(sourceActionId);
+    const targetIndex = ids.indexOf(targetActionId);
+    if (sourceIndex < 0 || targetIndex < 0) {
+      this.endActionDrag();
+      return;
+    }
+
+    ids.splice(sourceIndex, 1);
+    ids.splice(targetIndex, 0, sourceActionId);
+
+    try {
+      await this.daemon.putActionOrder(ids, scope);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save action order.";
+      this.daemon.addNotification("error", "Reorder failed", msg);
+    } finally {
+      this.endActionDrag();
+    }
+  }
+
+  endActionDrag(): void {
+    this.draggedActionId.set(null);
+    this.draggedActionScope.set(null);
+    this.dragOverActionId.set(null);
   }
 
   // ── Variant selector ─────────────────────────────────────────────────
@@ -336,7 +493,7 @@ export class ArtifactDetailComponent {
   async runAction(actionId: string): Promise<void> {
     const action = this.daemon.actions().find((a) => a.id === actionId);
     if (!action) return;
-    const mode = this.getRunMode(actionId);
+    const mode = this.getRunMode(action);
     const background = mode === "background";
     const variantId = this.getSelectedVariant(actionId) || undefined;
     const result = await this.daemon.dispatchAction(actionId, { background, variantId });
@@ -485,6 +642,8 @@ export class ArtifactDetailComponent {
       successHelpers: [],
       failHelpers: [],
       isLocalUser: true,
+      terminalMode: "pty",
+      runMode: "stream",
     });
   }
 
@@ -505,6 +664,8 @@ export class ArtifactDetailComponent {
         failHelpers: draft.failHelpers ?? [],
         isLocalUser: draft.isLocalUser ?? true,
         buttonColor: draft.buttonColor,
+        terminalMode: draft.terminalMode,
+        runMode: draft.runMode,
       });
       this.addingAction.set(false);
       this.daemon.addNotification("success", "Action created", `Action '${draft.label ?? draft.id}' created.`);

@@ -225,8 +225,8 @@
         log('info', 'Probing API at: ' + apiProbeUrl);
         setStatus('Probing daemon API…');
 
-        // Probe the daemon API — Connection: close forces a fresh connection
-        // so a hanging response cannot block subsequent JS module fetches.
+        // Probe the daemon API. Keep headers browser-safe: "Connection" is a
+        // forbidden request header in Fetch and can behave inconsistently.
         var probeAbort = new AbortController();
         var probeTimer = setTimeout(function() {
           probeAbort.abort();
@@ -234,7 +234,8 @@
 
         fetch(apiProbeUrl, {
           signal: probeAbort.signal,
-          headers: { 'Connection': 'close', 'Cache-Control': 'no-cache' }
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
         })
           .then(function(r) {
             clearTimeout(probeTimer);
@@ -301,7 +302,7 @@
           }
         }, 10000);
 
-        // Catch JS module load errors (e.g. main.js 404, import failures)
+        // Catch JS module load/runtime errors (e.g. main.js 404, import failures)
         window.addEventListener('error', function(evt) {
           var src = (evt.target && evt.target.src) ? evt.target.src : null;
           if (src) {
@@ -310,8 +311,23 @@
             diagNg.className = 'diag-value err';
             diagNg.textContent = 'script load failed: ' + short;
             setStatus('Script load error — bundle missing or 404');
+            return;
           }
+
+          var runtimeMsg = evt.message || (evt.error && (evt.error.stack || evt.error.message)) || 'unknown runtime error';
+          log('err', 'Runtime error: ' + runtimeMsg);
+          diagNg.className = 'diag-value err';
+          diagNg.textContent = 'runtime error: ' + runtimeMsg;
+          setStatus('Runtime error — check console');
         }, true);
+
+        window.addEventListener('unhandledrejection', function(evt) {
+          var reason = evt.reason && (evt.reason.stack || evt.reason.message) ? (evt.reason.stack || evt.reason.message) : String(evt.reason);
+          log('err', 'Unhandled rejection: ' + reason);
+          diagNg.className = 'diag-value err';
+          diagNg.textContent = 'unhandled rejection: ' + reason;
+          setStatus('Unhandled rejection — check console');
+        });
       })();
     </script>
   </body>

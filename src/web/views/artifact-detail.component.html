@@ -20,18 +20,26 @@
                       [class]="action.buttonColor && action.buttonColor !== 'disable'
                         ? 'text-white font-medium'
                         : 'text-tx-secondary hover:text-tx-primary border border-border-default bg-bg-surface hover:bg-bg-raised'"
+                      [class.ring-1]="dragOverActionId() === action.id && draggedActionScope() === 'header'"
+                      [class.ring-accent-border]="dragOverActionId() === action.id && draggedActionScope() === 'header'"
                       [style.background-color]="action.buttonColor && action.buttonColor !== 'disable' ? action.buttonColor : ''"
                       [disabled]="latestRunForAction(action.id)?.status === 'running'"
                       [title]="action.description || action.label"
+                      draggable="true"
+                      (dragstart)="startActionDrag('header', action.id, $event)"
+                      (dragover)="moveActionDragOver('header', action.id, $event)"
+                      (dragleave)="dragOverActionId.set(null)"
+                      (drop)="dropAction('header', action.id, $event)"
+                      (dragend)="endActionDrag()"
                       (click)="runAction(action.id)">
                 @if (latestRunForAction(action.id)?.status === 'running') {
                   <div class="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
                 } @else {
-                  <span class="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0" [innerHTML]="getIcon(action.icon, 'w-3.5 h-3.5')"></span>
+                  <span class="w-4 h-4 flex items-center justify-center flex-shrink-0" [innerHTML]="getIcon(action.icon, 'w-4 h-4', '2.35')"></span>
                 }
                 <span>{{ getHeaderActionLabel(action) }}</span>
                 @if (action.isLocalUser) {
-                  <span class="text-[8px] font-bold uppercase tracking-wider px-1 py-px rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">local</span>
+                  <span class="inline-flex h-3.5 items-center px-1 text-[8px] leading-none font-bold uppercase tracking-wider rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">local</span>
                 }
               </button>
             }
@@ -312,6 +320,18 @@
                   </svg>
                   Refresh
                 </button>
+                @if (daemon.actions().length > 1) {
+                  <button class="flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-colors"
+                          [class]="reorderingActions()
+                            ? 'border-accent-border bg-accent-dim text-accent-light'
+                            : 'border-border-default bg-bg-surface text-tx-secondary hover:text-tx-primary hover:border-border-strong'"
+                          (click)="toggleReorderingActions()">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                    </svg>
+                    {{ reorderingActions() ? 'Done' : 'Reorder' }}
+                  </button>
+                }
                 <button class="flex items-center gap-1.5 px-3 py-1.5 rounded border border-accent-border bg-accent-dim text-accent-light text-xs hover:bg-accent/20 transition-colors"
                         (click)="startAddAction()">
                   <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -321,6 +341,9 @@
                 </button>
               </div>
             </div>
+            @if (reorderingActions()) {
+              <p class="text-[11px] text-tx-muted -mt-3 mb-3">Drag action cards to reorder the Actions tab. Header actions can be dragged directly in the header bar.</p>
+            }
 
             @if (daemon.actions().length === 0 && !addingAction()) {
               <div class="rounded-lg border border-border-default bg-bg-surface py-12 text-center">
@@ -330,12 +353,30 @@
             }
 
             <div class="grid gap-3 md:grid-cols-2">
-              @for (action of daemon.actions(); track action.id) {
+              @for (action of orderedActions(); track action.id) {
                 <div class="group relative rounded-md overflow-hidden transition-colors"
-                     [class]="editingActionId() === action.id ? 'ring-1 ring-accent-border bg-bg-surface' : ''">
+                     [class]="editingActionId() === action.id ? 'ring-1 ring-accent-border bg-bg-surface' : ''"
+                     [class.cursor-grab]="reorderingActions()"
+                     [class.opacity-60]="draggedActionId() === action.id && draggedActionScope() === 'actions'"
+                     [class.ring-1]="dragOverActionId() === action.id && draggedActionScope() === 'actions'"
+                     [class.ring-accent-border]="dragOverActionId() === action.id && draggedActionScope() === 'actions'"
+                     [attr.draggable]="reorderingActions() ? 'true' : null"
+                     (dragstart)="startActionDrag('actions', action.id, $event)"
+                     (dragover)="moveActionDragOver('actions', action.id, $event)"
+                     (dragleave)="dragOverActionId.set(null)"
+                     (drop)="dropAction('actions', action.id, $event)"
+                     (dragend)="endActionDrag()">
 
                   <!-- Run button row (main card content — no card chrome) -->
                   <div class="flex gap-2 items-center p-2">
+                    @if (reorderingActions()) {
+                      <div class="w-7 h-7 flex items-center justify-center rounded border border-border-subtle bg-bg-surface text-tx-muted flex-shrink-0 cursor-grab"
+                           title="Drag to reorder">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h.01M12 7h.01M16 7h.01M8 12h.01M12 12h.01M16 12h.01M8 17h.01M12 17h.01M16 17h.01"/>
+                        </svg>
+                      </div>
+                    }
                     <!-- Variant selector (if action has variants) -->
                     @if ((action.variants ?? []).length > 0) {
                       <select class="bg-bg-base border border-border-default rounded px-2 py-1.5 text-xs text-tx-primary focus:border-accent outline-none flex-shrink-0 max-w-[140px]"
@@ -360,10 +401,10 @@
                         <div class="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
                         Running…
                       } @else {
-                        <span class="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0" [innerHTML]="getIcon(action.icon, 'w-3.5 h-3.5')"></span>
+                        <span class="w-[1.125rem] h-[1.125rem] flex items-center justify-center flex-shrink-0" [innerHTML]="getIcon(action.icon, 'w-[1.125rem] h-[1.125rem]', '2.35')"></span>
                         {{ action.runLabel || 'Run' }}
                         @if (action.isLocalUser) {
-                          <span class="text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 ml-0.5">local</span>
+                          <span class="inline-flex h-4 items-center px-1 text-[9px] leading-none font-bold uppercase tracking-wider rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 ml-0.5">local</span>
                         }
                       }
                     </button>
@@ -582,16 +623,16 @@
                         <div class="text-[10px] text-tx-muted font-medium mb-2">Run mode</div>
                         <div class="flex rounded border border-border-default overflow-hidden text-[10px] w-fit">
                           <button class="px-3 py-1.5 transition-colors"
-                                  [class]="getRunMode(action.id) === 'stream'
+                                  [class]="(editDraft()?.runMode ?? 'stream') === 'stream'
                                     ? 'bg-bg-overlay text-tx-primary font-medium'
                                     : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
-                                  (click)="setRunMode(action.id, 'stream')">Stream</button>
+                                  (click)="updateDraft('runMode', 'stream')">Stream</button>
                           <span class="border-l border-border-default"></span>
                           <button class="px-3 py-1.5 transition-colors"
-                                  [class]="getRunMode(action.id) === 'background'
+                                  [class]="editDraft()?.runMode === 'background'
                                     ? 'bg-bg-overlay text-tx-primary font-medium'
                                     : 'text-tx-muted hover:text-tx-secondary hover:bg-bg-hover'"
-                                  (click)="setRunMode(action.id, 'background')">Background</button>
+                                  (click)="updateDraft('runMode', 'background')">Background</button>
                         </div>
                       </div>
 
@@ -836,38 +877,48 @@
 
             @if (artifact(); as repo) {
               <div class="rounded-lg border border-border-default bg-bg-surface p-5">
-                <div class="flex items-center gap-3 p-3 rounded-md border border-accent-border bg-accent-dim mb-1">
-                  <svg class="w-4 h-4 text-accent-light flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                  </svg>
-                  <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-tx-primary flex items-center gap-2">
-                      {{ repo.name }}
-                      <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent/20 text-accent-light border border-accent-border uppercase">Current</span>
-                    </div>
-                    <div class="text-xs text-tx-muted font-mono truncate">{{ repo.path }}</div>
-                  </div>
-                </div>
-
-                @if (sibling_repos().length > 0) {
-                  <div class="mt-1 space-y-1">
-                    <div class="text-xs text-tx-muted uppercase tracking-wider mb-2 pt-1">Known siblings</div>
-                    @for (sibling of sibling_repos(); track sibling.id) {
-                      <div class="flex items-center gap-3 p-3 rounded-md border border-border-subtle bg-bg-raised hover:border-border-default hover:bg-bg-overlay transition-colors cursor-pointer"
-                           (click)="nav.openArtifactDetail(sibling.id)">
-                        <svg class="w-3.5 h-3.5 text-tx-muted flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                        </svg>
-                        <div class="min-w-0 flex-1">
-                          <div class="text-xs font-medium text-tx-secondary">{{ sibling.name }}</div>
-                          <div class="text-[11px] text-tx-muted font-mono truncate">{{ sibling.path }}</div>
+                @if (artifactTreeRows().length > 0) {
+                  <div class="space-y-1">
+                    @for (row of artifactTreeRows(); track row.repo.id) {
+                      <div class="relative"
+                           [style.padding-left.px]="row.depth * 22">
+                        @if (row.depth > 0) {
+                          <div class="absolute left-0 top-0 bottom-0 border-l border-border-subtle"
+                               [style.margin-left.px]="(row.depth - 1) * 22 + 8"></div>
+                          <div class="absolute top-1/2 w-3 border-t border-border-subtle"
+                               [style.left.px]="(row.depth - 1) * 22 + 8"></div>
+                        }
+                        <div class="flex items-center gap-3 p-3 rounded-md border transition-colors"
+                             [class]="row.relation === 'current'
+                               ? 'border-accent-border bg-accent-dim'
+                               : 'border-border-subtle bg-bg-raised hover:border-border-default hover:bg-bg-overlay cursor-pointer'"
+                             (click)="row.relation !== 'current' && nav.openArtifactDetail(row.repo.id)">
+                          <svg class="w-3.5 h-3.5 flex-shrink-0"
+                               [class]="row.relation === 'current' ? 'text-accent-light' : row.relation === 'parent' ? 'text-tx-secondary' : 'text-tx-muted'"
+                               fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                          </svg>
+                          <div class="min-w-0 flex-1">
+                            <div class="text-xs font-medium flex items-center gap-2"
+                                 [class]="row.relation === 'current' ? 'text-tx-primary' : 'text-tx-secondary'">
+                              {{ row.repo.name }}
+                              @if (row.relation === 'current') {
+                                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent/20 text-accent-light border border-accent-border uppercase">Current</span>
+                              } @else if (row.relation === 'parent') {
+                                <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-bg-overlay text-tx-muted border border-border-subtle uppercase">Parent</span>
+                              } @else {
+                                <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-bg-overlay text-tx-muted border border-border-subtle uppercase">Child</span>
+                              }
+                            </div>
+                            <div class="text-[11px] text-tx-muted font-mono truncate">{{ row.repo.path }}</div>
+                          </div>
                         </div>
                       </div>
                     }
                   </div>
                 } @else {
                   <div class="mt-1">
-                    <p class="text-xs text-tx-muted py-3">No other known artifacts in this workspace.</p>
+                    <p class="text-xs text-tx-muted py-3">No known parent or child artifacts in this workspace.</p>
                   </div>
                 }
               </div>

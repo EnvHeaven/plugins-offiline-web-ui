@@ -75,6 +75,7 @@ export interface ActionDefinition {
   isLocalUser?: boolean;
   buttonColor?: string;
   terminalMode?: "pty" | "pipe";
+  runMode?: "stream" | "background";
 }
 
 export interface ConsoleLogEntry {
@@ -95,12 +96,20 @@ export interface ActionRunEntry {
   terminalMode: "pty" | "pipe";
 }
 
+export interface ActionOrderPreferences {
+  actionIds: string[];
+  headerActionIds: string[];
+}
+
 @Injectable({ providedIn: "root" })
 export class DaemonService {
   readonly status = signal<DaemonStatus | null>(null);
   readonly repos = signal<RepoRecord[]>([]);
+  readonly pinnedArtifactIds = signal<string[]>([]);
   readonly versions = signal<VersionRecord[]>([]);
   readonly actions = signal<ActionDefinition[]>([]);
+  readonly actionOrderIds = signal<string[]>([]);
+  readonly headerActionOrderIds = signal<string[]>([]);
   readonly actionRuns = signal<ActionRunEntry[]>([]);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -202,6 +211,8 @@ export class DaemonService {
       await this.refreshVersions();
     } else if (type === "actions:updated") {
       await this.refreshActions();
+    } else if (type === "repos:pinned-updated") {
+      await this.refreshPinnedArtifacts();
     } else if (type === "action:complete") {
       const p = payload as { actionId?: string; status?: string } | null;
       if (p?.status === "success") {
@@ -214,7 +225,7 @@ export class DaemonService {
 
   async refreshAll(): Promise<void> {
     this.loading.set(true);
-    await Promise.all([this.refreshStatus(), this.refreshRepos(), this.refreshVersions(), this.refreshActions()]);
+    await Promise.all([this.refreshStatus(), this.refreshRepos(), this.refreshPinnedArtifacts(), this.refreshVersions(), this.refreshActions()]);
     this.loading.set(false);
     this.lastRefreshed.set(new Date());
   }
@@ -265,6 +276,20 @@ export class DaemonService {
     }
   }
 
+  async refreshPinnedArtifacts(): Promise<void> {
+    try {
+      const payload = await readJson<{ artifactIds?: string[] }>("/api/repos/pinned");
+      this.pinnedArtifactIds.set(payload.artifactIds ?? []);
+    } catch {
+      // silently ignore
+    }
+  }
+
+  async putPinnedArtifactIds(artifactIds: string[]): Promise<void> {
+    await putJson("/api/repos/pinned", { artifactIds });
+    this.pinnedArtifactIds.set([...new Set(artifactIds)]);
+  }
+
   async refreshVersions(): Promise<void> {
     const repoRoot = this.activeRepoPath();
     if (!repoRoot) return;
@@ -280,8 +305,10 @@ export class DaemonService {
     const repoRoot = this.activeRepoPath();
     if (!repoRoot) return;
     try {
-      const payload = await readJson<{ actions: ActionDefinition[] }>(`/api/actions?repoRoot=${encodeURIComponent(repoRoot)}`);
+      const payload = await readJson<{ actions: ActionDefinition[]; actionOrder?: ActionOrderPreferences }>(`/api/actions?repoRoot=${encodeURIComponent(repoRoot)}`);
       this.actions.set(payload.actions ?? []);
+      this.actionOrderIds.set(payload.actionOrder?.actionIds ?? []);
+      this.headerActionOrderIds.set(payload.actionOrder?.headerActionIds ?? []);
     } catch {
       // silently ignore
     }
@@ -459,6 +486,15 @@ export class DaemonService {
       actionId,
       repoRoot: this.activeRepoPath(),
       toLocalUser,
+    });
+    await this.refreshActions();
+  }
+
+  async putActionOrder(actionIds: string[], scope: "actions" | "header" = "actions"): Promise<void> {
+    await putJson("/api/actions/order", {
+      repoRoot: this.activeRepoPath(),
+      actionIds,
+      scope,
     });
     await this.refreshActions();
   }

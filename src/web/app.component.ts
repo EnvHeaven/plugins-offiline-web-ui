@@ -1,6 +1,6 @@
 import { Component, inject, signal, computed, OnInit, OnDestroy } from "@angular/core";
 import { environment } from "./environments/environment";
-import { DaemonService } from "./services/daemon.service";
+import { DaemonService, RepoRecord } from "./services/daemon.service";
 import { NavService, ViewId } from "./services/nav.service";
 import { HomeComponent } from "./views/home.component";
 import { ArtifactsListComponent } from "./views/artifacts-list.component";
@@ -48,7 +48,17 @@ export class AppComponent implements OnInit, OnDestroy {
     return "";
   });
 
-  readonly recentRepos = computed(() => this.daemon.repos().slice(0, 5));
+  readonly pinnedRepos = computed(() => {
+    const reposById = new Map(this.daemon.repos().map((repo) => [repo.id, repo]));
+    return this.daemon.pinnedArtifactIds()
+      .map((id) => reposById.get(id))
+      .filter((repo): repo is RepoRecord => Boolean(repo));
+  });
+
+  readonly recentRepos = computed(() => {
+    const pinnedIds = new Set(this.daemon.pinnedArtifactIds());
+    return this.daemon.repos().filter((repo) => !pinnedIds.has(repo.id)).slice(0, 5);
+  });
 
   readonly navItems: { id: ViewId; label: string; icon: string }[] = [
     {
@@ -82,6 +92,20 @@ export class AppComponent implements OnInit, OnDestroy {
 
   openArtifact(id: string): void {
     this.nav.openArtifactDetail(id);
+  }
+
+  async togglePinnedArtifact(id: string, event: Event): Promise<void> {
+    event.stopPropagation();
+    const current = this.daemon.pinnedArtifactIds();
+    const next = current.includes(id)
+      ? current.filter((pinnedId) => pinnedId !== id)
+      : [...current, id];
+    try {
+      await this.daemon.putPinnedArtifactIds(next);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save pinned artifacts.";
+      this.daemon.addNotification("error", "Pin failed", msg);
+    }
   }
 
   switchContext(id: string): void {
