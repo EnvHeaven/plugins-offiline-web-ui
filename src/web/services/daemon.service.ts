@@ -30,6 +30,16 @@ export interface VersionRecord {
   packageName: string;
   lastVersion: string | null;
   nextVersion: string | null;
+  displayTrack?: VersionPersistedTrack;
+  tracks?: Partial<Record<VersionPersistedTrack, VersionTrackState>>;
+}
+
+export type VersionPersistedTrack = "release" | "exp" | "beta";
+
+export interface VersionTrackState {
+  lastVersion?: string;
+  nextVersion?: string;
+  updatedAt?: string;
 }
 
 export interface AppNotification {
@@ -546,6 +556,8 @@ export class DaemonService {
     await postJson("/api/versions/set", {
       repoRoot: this.activeRepoPath(),
       artifactName: version.artifactName,
+      packageName: version.packageName,
+      track: version.displayTrack ?? "release",
       nextVersion: version.nextVersion,
     });
     await this.refreshVersions();

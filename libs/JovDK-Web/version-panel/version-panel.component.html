@@ -11,23 +11,38 @@
         </span>
       </div>
 
+      <!-- Version track selector -->
+      <div class="flex items-center gap-1 rounded-md border border-[#1e1e2e] bg-[#0d0d17] p-1">
+        @for (track of versionTracks; track track) {
+          <button
+            type="button"
+            class="flex-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors"
+            [class]="activeVersionTrack() === track
+              ? 'bg-[#24243a] text-[#e2e2f0]'
+              : 'text-[#6b6b85] hover:text-[#a0a0b8]'"
+            (click)="selectTrack(track)">
+            {{ track }}
+          </button>
+        }
+      </div>
+
       <!-- Version info grid -->
       <div class="grid grid-cols-2 gap-3">
 
         <!-- Last version (read-only) -->
         <div>
           <label class="block text-[10px] font-semibold text-[#6b6b85] uppercase tracking-wider mb-1.5">
-            Last Version
+            Last Version · {{ activeTrackLabel() }}
           </label>
           <div class="bg-[#0d0d17] border border-[#1e1e2e] rounded-md px-3 py-2 text-sm text-[#6b6b85] font-mono select-all">
-            {{ version.lastVersion ?? '—' }}
+            {{ trackState(activeVersionTrack()).lastVersion ?? '—' }}
           </div>
         </div>
 
         <!-- Next version (editable) -->
         <div>
           <label class="block text-[10px] font-semibold text-[#6b6b85] uppercase tracking-wider mb-1.5">
-            Next Version
+            Next Version · {{ activeTrackLabel() }}
           </label>
           <input
             class="w-full bg-[#0d0d17] border border-[#2a2a3a] rounded-md px-3 py-2 text-sm text-[#e2e2f0] font-mono placeholder-[#4a4a5e] focus:border-[#6b4fcf]/60 focus:ring-1 focus:ring-[#6b4fcf]/20 focus:outline-none transition-colors"

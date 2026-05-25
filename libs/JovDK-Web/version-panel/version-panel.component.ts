@@ -2,12 +2,21 @@ import { Component, Input, Output, EventEmitter, signal, OnChanges, SimpleChange
 import { FormsModule } from '@angular/forms';
 
 export type IncrementTrack = 'patch' | 'minor' | 'exp';
+export type VersionPersistedTrack = 'release' | 'exp' | 'beta';
+
+export interface VersionTrackState {
+  lastVersion?: string;
+  nextVersion?: string;
+  updatedAt?: string;
+}
 
 export interface VersionRecord {
   artifactName: string;
   packageName: string;
   lastVersion: string | null;
   nextVersion: string | null;
+  displayTrack?: VersionPersistedTrack;
+  tracks?: Partial<Record<VersionPersistedTrack, VersionTrackState>>;
 }
 
 @Component({
@@ -21,10 +30,12 @@ export class VersionPanelComponent implements OnChanges {
 
   @Input({ required: true }) version!: VersionRecord;
 
-  @Output() versionSet = new EventEmitter<{ artifactName: string; packageName: string; nextVersion: string }>();
+  @Output() versionSet = new EventEmitter<{ artifactName: string; packageName: string; track: VersionPersistedTrack; nextVersion: string }>();
   @Output() versionIncremented = new EventEmitter<{ artifactName: string; packageName: string; track: IncrementTrack }>();
 
+  readonly versionTracks: VersionPersistedTrack[] = ['release', 'exp', 'beta'];
   readonly draftVersion = signal<string>('');
+  readonly activeVersionTrack = signal<VersionPersistedTrack>('release');
   readonly saving = signal(false);
   readonly incrementing = signal(false);
   readonly activeTrack = signal<IncrementTrack | null>(null);
@@ -33,8 +44,37 @@ export class VersionPanelComponent implements OnChanges {
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['version']) {
-      this.draftVersion.set(this.version.nextVersion ?? '');
+      const nextTrack = this.version.displayTrack ?? this.preferredTrack();
+      this.activeVersionTrack.set(nextTrack);
+      this.draftVersion.set(this.trackState(nextTrack).nextVersion ?? '');
     }
+  }
+
+  selectTrack(track: VersionPersistedTrack): void {
+    this.activeVersionTrack.set(track);
+    this.draftVersion.set(this.trackState(track).nextVersion ?? '');
+  }
+
+  trackState(track: VersionPersistedTrack): VersionTrackState {
+    if (track === 'release') {
+      if (this.version.tracks) {
+        return this.version.tracks.release ?? {};
+      }
+      return {
+        lastVersion: this.version.lastVersion ?? undefined,
+        nextVersion: this.version.nextVersion ?? undefined,
+      };
+    }
+    return this.version.tracks?.[track] ?? {};
+  }
+
+  activeTrackLabel(): string {
+    const labels: Record<VersionPersistedTrack, string> = {
+      release: 'Release',
+      exp: 'Experimental',
+      beta: 'Beta',
+    };
+    return labels[this.activeVersionTrack()];
   }
 
   onSave(): void {
@@ -42,7 +82,12 @@ export class VersionPanelComponent implements OnChanges {
     if (!next) return;
     this.saving.set(true);
     this.clearFeedback();
-    this.versionSet.emit({ artifactName: this.version.artifactName, packageName: this.version.packageName, nextVersion: next });
+    this.versionSet.emit({
+      artifactName: this.version.artifactName,
+      packageName: this.version.packageName,
+      track: this.activeVersionTrack(),
+      nextVersion: next,
+    });
     setTimeout(() => {
       this.saving.set(false);
       this.showFeedback('ok', `Saved → ${next}`);
@@ -52,6 +97,7 @@ export class VersionPanelComponent implements OnChanges {
   onIncrement(track: IncrementTrack = 'patch'): void {
     this.incrementing.set(true);
     this.activeTrack.set(track);
+    this.activeVersionTrack.set(track === 'exp' ? 'exp' : 'release');
     this.clearFeedback();
     this.versionIncremented.emit({ artifactName: this.version.artifactName, packageName: this.version.packageName, track });
     setTimeout(() => {
@@ -70,5 +116,18 @@ export class VersionPanelComponent implements OnChanges {
 
   private clearFeedback(): void {
     this.feedbackMsg.set(null);
+  }
+
+  private preferredTrack(): VersionPersistedTrack {
+    if (this.version.tracks?.exp?.nextVersion || this.version.tracks?.exp?.lastVersion) {
+      return 'exp';
+    }
+    if (this.version.tracks?.release?.nextVersion || this.version.tracks?.release?.lastVersion) {
+      return 'release';
+    }
+    if (this.version.tracks?.beta?.nextVersion || this.version.tracks?.beta?.lastVersion) {
+      return 'beta';
+    }
+    return 'release';
   }
 }

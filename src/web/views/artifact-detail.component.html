@@ -292,10 +292,10 @@
               </div>
             } @else {
               <div class="space-y-3">
-                @for (version of daemon.versions(); track version.artifactName) {
+                @for (version of daemon.versions(); track version.artifactName + '::' + version.packageName) {
                   <jov-version-panel
                     [version]="version"
-                    (versionSet)="saveVersionByName($event.artifactName, $event.packageName, $event.nextVersion)"
+                    (versionSet)="saveVersionByName($event.artifactName, $event.packageName, $event.track, $event.nextVersion)"
                     (versionIncremented)="incrementVersionByName($event.artifactName, $event.packageName, $event.track)"
                   />
                 }

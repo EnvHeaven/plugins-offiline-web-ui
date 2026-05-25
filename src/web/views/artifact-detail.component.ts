@@ -451,10 +451,10 @@ export class ArtifactDetailComponent {
   }
 
   // ── Version actions ──────────────────────────────────────────────────
-  async saveVersionByName(artifactName: string, packageName: string, nextVersion: string): Promise<void> {
+  async saveVersionByName(artifactName: string, packageName: string, track: 'release' | 'exp' | 'beta', nextVersion: string): Promise<void> {
     const ver = this.daemon.versions().find((v) => v.artifactName === artifactName && v.packageName === packageName);
     if (!ver) return;
-    await this.daemon.saveVersionAndReturn({ ...ver, nextVersion });
+    await this.daemon.saveVersionAndReturn({ ...ver, displayTrack: track, nextVersion });
   }
 
   async incrementVersionByName(artifactName: string, packageName: string, track: 'patch' | 'minor' | 'exp' = 'patch'): Promise<void> {
