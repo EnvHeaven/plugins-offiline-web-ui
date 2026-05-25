@@ -291,12 +291,55 @@
                 <p class="text-tx-disabled text-xs mt-1">No versioned artifacts detected in this repo.</p>
               </div>
             } @else {
+              <div class="mb-4 rounded-lg border border-border-default bg-bg-surface p-3">
+                <div class="flex flex-wrap items-center gap-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-tx-muted">TH1</span>
+                    <div class="flex items-center gap-1 rounded-md border border-border-default bg-bg-raised p-1">
+                      @for (track of versionTracks; track track) {
+                        <button
+                          type="button"
+                          class="rounded px-3 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors"
+                          [class]="globalVersionTrack() === track
+                            ? 'bg-bg-overlay text-tx-primary'
+                            : 'text-tx-muted hover:text-tx-secondary'"
+                          (click)="setAllVersionTracks(track)">
+                          {{ track }}
+                        </button>
+                      }
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    class="ml-auto flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-semibold transition-colors"
+                    [class]="versionTrackLock()
+                      ? 'border-[#2e4a72]/70 bg-[#1a2d4a] text-[#7badd6]'
+                      : 'border-border-default bg-bg-surface text-tx-muted hover:text-tx-secondary'"
+                    (click)="toggleVersionTrackLock()">
+                    @if (versionTrackLock()) {
+                      <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0v4m-9 0h10a1 1 0 011 1v8a1 1 0 01-1 1H7a1 1 0 01-1-1v-8a1 1 0 011-1z"/>
+                      </svg>
+                      Locked
+                    } @else {
+                      <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 117.9-.9M7 11h10a1 1 0 011 1v8a1 1 0 01-1 1H7a1 1 0 01-1-1v-8a1 1 0 011-1z"/>
+                      </svg>
+                      Unlocked
+                    }
+                  </button>
+                </div>
+              </div>
+
               <div class="space-y-3">
                 @for (version of daemon.versions(); track version.artifactName + '::' + version.packageName) {
                   <jov-version-panel
                     [version]="version"
+                    [selectedTrack]="selectedTrackForVersion(version)"
                     (versionSet)="saveVersionByName($event.artifactName, $event.packageName, $event.track, $event.nextVersion)"
                     (versionIncremented)="incrementVersionByName($event.artifactName, $event.packageName, $event.track)"
+                    (versionTrackSelected)="selectVersionTrack(version, $event.track)"
                   />
                 }
               </div>

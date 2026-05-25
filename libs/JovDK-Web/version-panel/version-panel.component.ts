@@ -29,9 +29,11 @@ export interface VersionRecord {
 export class VersionPanelComponent implements OnChanges {
 
   @Input({ required: true }) version!: VersionRecord;
+  @Input() selectedTrack?: VersionPersistedTrack;
 
   @Output() versionSet = new EventEmitter<{ artifactName: string; packageName: string; track: VersionPersistedTrack; nextVersion: string }>();
   @Output() versionIncremented = new EventEmitter<{ artifactName: string; packageName: string; track: IncrementTrack }>();
+  @Output() versionTrackSelected = new EventEmitter<{ artifactName: string; packageName: string; track: VersionPersistedTrack }>();
 
   readonly versionTracks: VersionPersistedTrack[] = ['exp', 'canary', 'alpha', 'beta', 'rc', 'release'];
   readonly draftVersion = signal<string>('');
@@ -43,8 +45,8 @@ export class VersionPanelComponent implements OnChanges {
   readonly feedbackKind = signal<'ok' | 'err'>('ok');
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['version']) {
-      const nextTrack = this.version.displayTrack ?? this.preferredTrack();
+    if (changes['version'] || changes['selectedTrack']) {
+      const nextTrack = this.selectedTrack ?? this.version.displayTrack ?? this.preferredTrack();
       this.activeVersionTrack.set(nextTrack);
       this.draftVersion.set(this.trackState(nextTrack).nextVersion ?? '');
     }
@@ -53,6 +55,7 @@ export class VersionPanelComponent implements OnChanges {
   selectTrack(track: VersionPersistedTrack): void {
     this.activeVersionTrack.set(track);
     this.draftVersion.set(this.trackState(track).nextVersion ?? '');
+    this.versionTrackSelected.emit({ artifactName: this.version.artifactName, packageName: this.version.packageName, track });
   }
 
   trackState(track: VersionPersistedTrack): VersionTrackState {

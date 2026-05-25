@@ -9,6 +9,8 @@ import {
   ArtifactMeta,
   PageHeaderOptions,
   RepoRecord,
+  VersionPersistedTrack,
+  VersionRecord,
 } from "../services/daemon.service";
 import { NavService } from "../services/nav.service";
 import { VersionPanelComponent, TerminalPanelComponent, TerminalExitEvent } from "@jovdk-web";
@@ -102,6 +104,19 @@ export class ArtifactDetailComponent {
   readonly logPane = viewChild<ElementRef>("logPane");
 
   readonly iconOptions: string[] = Object.keys(ICON_PATHS);
+  readonly versionTracks: VersionPersistedTrack[] = ["exp", "canary", "alpha", "beta", "rc", "release"];
+  readonly versionTrackSelections = signal<Record<string, VersionPersistedTrack>>({});
+  readonly versionTrackLock = signal(false);
+  readonly globalVersionTrack = computed((): VersionPersistedTrack | null => {
+    const versions = this.daemon.versions();
+    if (versions.length === 0) return null;
+
+    const selections = this.versionTrackSelections();
+    const firstTrack = selections[this.versionKey(versions[0])] ?? this.defaultVersionTrack(versions[0]);
+    return versions.every((version) => (selections[this.versionKey(version)] ?? this.defaultVersionTrack(version)) === firstTrack)
+      ? firstTrack
+      : null;
+  });
 
   readonly tabs: { id: DetailTab; label: string }[] = [
     { id: "overview", label: "Overview" },
@@ -173,6 +188,23 @@ export class ArtifactDetailComponent {
     const repo = this.artifact();
     if (repo && this.daemon.activeRepoPath() !== repo.path) {
       this.daemon.setActiveRepo(repo.path);
+    }
+  });
+
+  private readonly versionTrackSelectionEffect = effect(() => {
+    const versions = this.daemon.versions();
+    const current = this.versionTrackSelections();
+    const next: Record<string, VersionPersistedTrack> = {};
+    let changed = Object.keys(current).length !== versions.length;
+
+    for (const version of versions) {
+      const key = this.versionKey(version);
+      next[key] = current[key] ?? this.defaultVersionTrack(version);
+      changed = changed || next[key] !== current[key];
+    }
+
+    if (changed) {
+      this.versionTrackSelections.set(next);
     }
   });
 
@@ -451,6 +483,40 @@ export class ArtifactDetailComponent {
   }
 
   // ── Version actions ──────────────────────────────────────────────────
+  versionKey(version: VersionRecord): string {
+    return `${version.artifactName}::${version.packageName}`;
+  }
+
+  selectedTrackForVersion(version: VersionRecord): VersionPersistedTrack {
+    return this.versionTrackSelections()[this.versionKey(version)] ?? this.defaultVersionTrack(version);
+  }
+
+  setAllVersionTracks(track: VersionPersistedTrack): void {
+    const next = Object.fromEntries(this.daemon.versions().map((version) => [this.versionKey(version), track]));
+    this.versionTrackSelections.set(next);
+  }
+
+  selectVersionTrack(version: VersionRecord, track: VersionPersistedTrack): void {
+    if (this.versionTrackLock()) {
+      this.setAllVersionTracks(track);
+      return;
+    }
+    this.versionTrackSelections.update((current) => ({ ...current, [this.versionKey(version)]: track }));
+  }
+
+  toggleVersionTrackLock(): void {
+    this.versionTrackLock.update((value) => !value);
+  }
+
+  private defaultVersionTrack(version: VersionRecord): VersionPersistedTrack {
+    if (version.displayTrack) return version.displayTrack;
+    for (const track of this.versionTracks) {
+      const state = version.tracks?.[track];
+      if (state?.nextVersion || state?.lastVersion) return track;
+    }
+    return "release";
+  }
+
   async saveVersionByName(
     artifactName: string,
     packageName: string,
