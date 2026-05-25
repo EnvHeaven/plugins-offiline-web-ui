@@ -34,7 +34,7 @@ export interface VersionRecord {
   tracks?: Partial<Record<VersionPersistedTrack, VersionTrackState>>;
 }
 
-export type VersionPersistedTrack = "release" | "exp" | "beta";
+export type VersionPersistedTrack = "exp" | "canary" | "alpha" | "beta" | "rc" | "release";
 
 export interface VersionTrackState {
   lastVersion?: string;
