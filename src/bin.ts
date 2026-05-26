@@ -7,7 +7,7 @@ async function main(): Promise<void> {
 
   process.stdout.write(
     [
-      `EnvHeaven offiline web UI running at ${started.url}`,
+      `EnvHeaven offline Web UI running at ${started.url}`,
       `Proxying daemon API at ${started.daemonUrl}`,
     ].join("\n") + "\n",
   );

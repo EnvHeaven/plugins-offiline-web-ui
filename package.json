@@ -1,5 +1,5 @@
 {
-  "name": "@envheaven/plugins-offiline-web-ui",
+  "name": "@envheaven/plugins-offline-web-ui",
   "version": "0.1.0",
   "description": "Offline-first Angular and Tailwind UI for EnvHeaven daemon state and version registry management.",
   "license": "MIT",
@@ -7,11 +7,13 @@
   "main": "dist/server/index.js",
   "types": "dist/server/index.d.ts",
   "bin": {
+    "envheaven-offline-web-ui": "dist/server/bin.js",
     "envheaven-offiline-web-ui": "dist/server/bin.js"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "docs/readme/logo/envheaven-logo.svg"
   ],
   "scripts": {
     "gen-env": "node scripts/gen-environment.mjs",
@@ -23,6 +25,17 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EnvHeaven/plugins-offiline-web-ui.git"
+  },
+  "homepage": "https://envheaven.com",
+  "bugs": {
+    "url": "https://github.com/EnvHeaven/plugins-offiline-web-ui/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@angular/animations": "^21.0.0",

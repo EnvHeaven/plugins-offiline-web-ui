@@ -1,27 +1,24 @@
 <p align="center">
   <a href="https://envheaven.com">
-    <img src="./docs/readme/logo/envheaven-logo.png" alt="EnvHeaven" width="96" />
+    <img src="./docs/readme/logo/envheaven-logo.svg" alt="EnvHeaven" width="96" />
   </a>
 </p>
 
-# @envheaven/plugins-offiline-web-ui
+# @envheaven/plugins-offline-web-ui
 
 > Local Offline Web UI for EnvHeaven daemon state, actions, terminal sessions, and version registry workflows.
 
-[![npm version](https://img.shields.io/npm/v/@envheaven/plugins-offiline-web-ui)](https://www.npmjs.com/package/@envheaven/plugins-offiline-web-ui)
-[![license](https://img.shields.io/npm/l/@envheaven/plugins-offiline-web-ui)](https://www.npmjs.com/package/@envheaven/plugins-offiline-web-ui)
-
 > **Experimental 0.x:** EnvHeaven is currently in experimental `0.x` development. APIs, CLI commands, plugin contracts, package names, and release behavior may change before `1.0.0`. Pin versions and read release notes before using it in production workflows.
 
-## Package spelling
+## Package rename
 
-The package name currently uses `offiline`:
+The corrected package name is:
 
 ```txt
-@envheaven/plugins-offiline-web-ui
+@envheaven/plugins-offline-web-ui
 ```
 
-Keep that spelling in install commands, imports, and binaries.
+The old typo package `@envheaven/plugins-offiline-web-ui` was verified on NPM and is kept only as migration/deprecation history. The corrected package was prepared here but public NPM publication was not verified yet.
 
 ## What it does
 
@@ -34,14 +31,21 @@ It supports:
 - managing artifact version registry values.
 - running and viewing action terminals.
 - opening PTY terminal sessions backed by the daemon.
-- using Dynamic View presets and terminal slots in the local UI.
+- using Action Board presets and terminal slots in the local UI.
 
 It is not a hosted cloud dashboard.
 
 ## Install
 
 ```sh
-npm install @envheaven/plugins-offiline-web-ui
+# release track, after corrected package publication
+npm install @envheaven/plugins-offline-web-ui@release
+
+# npm default alias for the release track, after publication
+npm install @envheaven/plugins-offline-web-ui
+
+# experimental track, after publication
+npm install @envheaven/plugins-offline-web-ui@exp
 ```
 
 Install the EnvHeaven host package too:
@@ -55,14 +59,16 @@ npm install envheaven
 From an EnvHeaven workflow, the core CLI can launch the UI package when available:
 
 ```sh
-envheaven offiline-web-ui
+envheaven offline-web-ui
 ```
 
 The package also exposes a binary:
 
 ```sh
-envheaven-offiline-web-ui --daemon-url http://127.0.0.1:42990 --port 0
+envheaven-offline-web-ui --daemon-url http://127.0.0.1:42990 --port 0
 ```
+
+A temporary legacy binary alias, `envheaven-offiline-web-ui`, is retained in package metadata for compatibility during the rename.
 
 ## Requirements
 
