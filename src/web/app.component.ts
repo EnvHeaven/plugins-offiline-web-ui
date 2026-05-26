@@ -7,6 +7,7 @@ import { ArtifactsListComponent } from "./views/artifacts-list.component";
 import { ArtifactDetailComponent } from "./views/artifact-detail.component";
 import { SettingsComponent } from "./views/settings.component";
 import { DynamicView } from "./app/views/dynamic-view/dynamic-view";
+import { ACTION_BOARD_LABEL } from "./app/views/dynamic-view/dynamic-view.constants";
 
 @Component({
   selector: "app-root",
@@ -41,6 +42,7 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly breadcrumb = computed<string>(() => {
     const view = this.nav.currentView();
     if (view === "artifacts") return "All Artifacts";
+    if (view === "dynamic-view") return ACTION_BOARD_LABEL;
     if (view === "settings") return "Settings";
     if (view === "detail") {
       const id = this.nav.selectedArtifactId();
@@ -72,6 +74,11 @@ export class AppComponent implements OnInit, OnDestroy {
       id: "artifacts",
       label: "All Artifacts",
       icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>`,
+    },
+    {
+      id: "dynamic-view",
+      label: ACTION_BOARD_LABEL,
+      icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h7v6H4zM13 6h7v4h-7zM13 12h7v6h-7zM4 14h7v4H4z"/></svg>`,
     },
     {
       id: "settings",

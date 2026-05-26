@@ -184,6 +184,7 @@ export interface ActionGroupFilters {
   artifactId?: string;
   repoRoot?: string;
   status?: ActionGroupStatus;
+  global?: boolean;
 }
 
 export interface TerminalSessionFilters {
@@ -191,6 +192,7 @@ export interface TerminalSessionFilters {
   repoRoot?: string;
   actionGroupId?: string;
   status?: TerminalSessionStatus;
+  global?: boolean;
 }
 
 export type ControlBlockKind =
@@ -631,7 +633,7 @@ export class DaemonService {
 
   async listTerminalSessions(filters: TerminalSessionFilters = {}): Promise<TerminalSessionSummary[]> {
     const params = new URLSearchParams();
-    const repoRoot = filters.repoRoot ?? this.activeRepoPath() ?? undefined;
+    const repoRoot = filters.global ? filters.repoRoot : filters.repoRoot ?? this.activeRepoPath() ?? undefined;
     if (filters.artifactId) params.set("artifactId", filters.artifactId);
     if (repoRoot) params.set("repoRoot", repoRoot);
     if (filters.actionGroupId) params.set("actionGroupId", filters.actionGroupId);
@@ -658,7 +660,7 @@ export class DaemonService {
 
   async listActionGroups(filters: ActionGroupFilters = {}): Promise<ActionGroupSummary[]> {
     const params = new URLSearchParams();
-    const repoRoot = filters.repoRoot ?? this.activeRepoPath() ?? undefined;
+    const repoRoot = filters.global ? filters.repoRoot : filters.repoRoot ?? this.activeRepoPath() ?? undefined;
     if (filters.artifactId) params.set("artifactId", filters.artifactId);
     if (repoRoot) params.set("repoRoot", repoRoot);
     if (filters.status) params.set("status", filters.status);
@@ -675,9 +677,9 @@ export class DaemonService {
     });
   }
 
-  async listControlPanelPresets(filters: { artifactId?: string; repoRoot?: string } = {}): Promise<ControlPanelPreset[]> {
+  async listControlPanelPresets(filters: { artifactId?: string; repoRoot?: string; global?: boolean } = {}): Promise<ControlPanelPreset[]> {
     const params = new URLSearchParams();
-    const repoRoot = filters.repoRoot ?? this.activeRepoPath() ?? undefined;
+    const repoRoot = filters.global ? filters.repoRoot : filters.repoRoot ?? this.activeRepoPath() ?? undefined;
     if (filters.artifactId) params.set("artifactId", filters.artifactId);
     if (repoRoot) params.set("repoRoot", repoRoot);
     const qs = params.toString() ? `?${params.toString()}` : "";
@@ -686,24 +688,22 @@ export class DaemonService {
   }
 
   async createControlPanelPreset(preset: ControlPanelPreset): Promise<ControlPanelPreset> {
-    const repoRoot = preset.repoRoot ?? this.activeRepoPath();
     const payload = await postJsonRead<{ preset: ControlPanelPreset }>("/api/control-panel/presets", {
       ...preset,
-      repoRoot,
+      ...(preset.repoRoot ? { repoRoot: preset.repoRoot } : {}),
     });
     return payload.preset;
   }
 
   async updateControlPanelPreset(presetId: string, preset: ControlPanelPreset): Promise<ControlPanelPreset> {
-    const repoRoot = preset.repoRoot ?? this.activeRepoPath();
     const payload = await putJsonRead<{ preset: ControlPanelPreset }>(
       `/api/control-panel/presets/${encodeURIComponent(presetId)}`,
-      { ...preset, id: presetId, repoRoot },
+      { ...preset, id: presetId, ...(preset.repoRoot ? { repoRoot: preset.repoRoot } : {}) },
     );
     return payload.preset;
   }
 
-  async deleteControlPanelPreset(presetId: string, repoRoot = this.activeRepoPath()): Promise<void> {
+  async deleteControlPanelPreset(presetId: string, repoRoot?: string): Promise<void> {
     const qs = repoRoot ? `?repoRoot=${encodeURIComponent(repoRoot)}` : "";
     await deleteReq(`/api/control-panel/presets/${encodeURIComponent(presetId)}${qs}`);
   }

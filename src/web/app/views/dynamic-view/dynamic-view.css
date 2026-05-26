@@ -68,6 +68,34 @@ h2 {
   white-space: nowrap;
 }
 
+.scope-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.scope-chip {
+  max-width: 44rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  background: rgb(15 23 42 / 0.72);
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-clear {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.68rem;
+}
+
 .preset-strip,
 .toolbar-group,
 .block-actions,

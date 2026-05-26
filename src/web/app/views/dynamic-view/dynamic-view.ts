@@ -9,6 +9,7 @@ import {
   layoutFingerprint,
   normalizeSplitSizes,
 } from "./dynamic-view-utils";
+import { ACTION_BOARD_LABEL, actionBoardStandaloneUrl, parseDynamicViewScope } from "./dynamic-view.constants";
 import {
   ActionDefinition,
   ActionGroupSummary,
@@ -48,6 +49,7 @@ export class DynamicView implements OnInit, OnDestroy {
 
   readonly daemon = inject(DaemonService);
   readonly nav = inject(NavService);
+  readonly label = ACTION_BOARD_LABEL;
 
   readonly presets = signal<ControlPanelPreset[]>([]);
   readonly selectedPresetId = signal<string | null>(null);
@@ -69,12 +71,24 @@ export class DynamicView implements OnInit, OnDestroy {
   readonly saving = signal(false);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  readonly scopeArtifactId = signal<string | null>(null);
+  readonly scopeRepoRoot = signal<string | null>(null);
 
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   readonly artifact = computed(() => {
-    const id = this.nav.selectedArtifactId();
+    const id = this.scopeArtifactId() ?? this.nav.selectedArtifactId();
     return this.daemon.repos().find((repo) => repo.id === id) ?? null;
+  });
+
+  readonly effectiveRepoRoot = computed(() => this.scopeRepoRoot() ?? this.artifact()?.path ?? null);
+
+  readonly scopeLabel = computed(() => {
+    const repoRoot = this.effectiveRepoRoot();
+    const artifactId = this.scopeArtifactId();
+    if (repoRoot) return `Scope: ${repoRoot}`;
+    if (artifactId) return `Scope: artifact ${artifactId}`;
+    return "Scope: global";
   });
 
   readonly selectedPreset = computed(() => {
@@ -130,6 +144,7 @@ export class DynamicView implements OnInit, OnDestroy {
   );
 
   async ngOnInit(): Promise<void> {
+    this.initializeScopeFromLocation();
     await Promise.all([this.refreshPresets(), this.refreshTerminalSessions(), this.refreshActionGroups()]);
     this.selectInitialPreset();
     this.refreshTimer = setInterval(() => {
@@ -146,26 +161,32 @@ export class DynamicView implements OnInit, OnDestroy {
   }
 
   async refreshPresets(): Promise<void> {
-    const repo = this.artifact();
-    if (!repo) return;
     this.loading.set(true);
     try {
-      const presets = await this.daemon.listControlPanelPresets({ repoRoot: repo.path, artifactId: repo.id });
+      const repoRoot = this.effectiveRepoRoot();
+      const artifactId = this.scopeArtifactId() ?? undefined;
+      const presets = await this.daemon.listControlPanelPresets({
+        repoRoot: repoRoot ?? undefined,
+        artifactId,
+        global: !repoRoot,
+      });
       this.presets.set(presets);
       this.ensureSelectedPresetExists(presets);
       this.error.set(null);
     } catch (err) {
-      this.error.set(err instanceof Error ? err.message : "Could not load Dynamic View presets.");
+      this.error.set(err instanceof Error ? err.message : "Could not load Action Board presets.");
     } finally {
       this.loading.set(false);
     }
   }
 
   async refreshTerminalSessions(): Promise<void> {
-    const repo = this.artifact();
-    if (!repo) return;
     try {
-      const sessions = await this.daemon.listTerminalSessions({ repoRoot: repo.path });
+      const repoRoot = this.effectiveRepoRoot();
+      const sessions = await this.daemon.listTerminalSessions({
+        repoRoot: repoRoot ?? undefined,
+        global: !repoRoot,
+      });
       this.terminalSessions.set(sessions);
       await this.autoWireSessions(sessions);
     } catch {
@@ -174,10 +195,12 @@ export class DynamicView implements OnInit, OnDestroy {
   }
 
   async refreshActionGroups(): Promise<void> {
-    const repo = this.artifact();
-    if (!repo) return;
     try {
-      const groups = await this.daemon.listActionGroups({ repoRoot: repo.path });
+      const repoRoot = this.effectiveRepoRoot();
+      const groups = await this.daemon.listActionGroups({
+        repoRoot: repoRoot ?? undefined,
+        global: !repoRoot,
+      });
       this.actionGroups.set(groups);
     } catch {
       // Group refresh is opportunistic.
@@ -191,14 +214,14 @@ export class DynamicView implements OnInit, OnDestroy {
   }
 
   async createPreset(): Promise<void> {
-    const repo = this.artifact();
-    if (!repo) return;
+    const repoRoot = this.effectiveRepoRoot();
+    const artifactId = this.scopeArtifactId() ?? this.artifact()?.id ?? undefined;
     const blockId = this.newId("status");
     const preset: ControlPanelPreset = {
       id: this.newId("preset"),
-      artifactId: repo.id,
-      repoRoot: repo.path,
-      name: `Dynamic View ${this.presets().length + 1}`,
+      artifactId,
+      repoRoot: repoRoot ?? undefined,
+      name: `${this.label} ${this.presets().length + 1}`,
       layout: { type: "block", blockId },
       blocks: [{ id: blockId, kind: "status", title: "Status" }],
       createdAt: Date.now(),
@@ -407,12 +430,12 @@ export class DynamicView implements OnInit, OnDestroy {
 
   async runLayout(): Promise<void> {
     const preset = this.selectedPreset();
-    const repo = this.artifact();
-    if (!preset || !repo) return;
+    const repoRoot = this.effectiveRepoRoot();
+    if (!preset) return;
     const terminals = this.runnableTerminalBlocks().map((block) => ({
       slotId: block.id,
       actionId: block.terminal?.expectedActionId,
-      repoRoot: block.terminal?.expectedRepoRoot ?? repo.path,
+      repoRoot: block.terminal?.expectedRepoRoot ?? repoRoot ?? undefined,
       title: block.title,
     }));
 
@@ -424,8 +447,8 @@ export class DynamicView implements OnInit, OnDestroy {
     this.saving.set(true);
     try {
       const result = await this.daemon.dispatchActionGroup({
-        artifactId: repo.id,
-        repoRoot: repo.path,
+        artifactId: this.scopeArtifactId() ?? this.artifact()?.id ?? undefined,
+        repoRoot: repoRoot ?? terminals[0]?.repoRoot,
         label: preset.name,
         terminals,
       });
@@ -452,7 +475,7 @@ export class DynamicView implements OnInit, OnDestroy {
       this.terminalSessions.set(this.mergeSessions(result.runs, this.terminalSessions()));
       this.error.set(null);
     } catch (err) {
-      this.error.set(err instanceof Error ? err.message : "Could not run Dynamic View layout.");
+      this.error.set(err instanceof Error ? err.message : "Could not run Action Board layout.");
     } finally {
       this.saving.set(false);
     }
@@ -460,8 +483,8 @@ export class DynamicView implements OnInit, OnDestroy {
 
   async runTerminalBlock(block: ControlBlock): Promise<void> {
     const preset = this.selectedPreset();
-    const repo = this.artifact();
-    if (!preset || !repo || !this.isRunnableTerminalBlock(block)) {
+    const repoRoot = this.effectiveRepoRoot();
+    if (!preset || !this.isRunnableTerminalBlock(block)) {
       this.error.set("Configure this terminal slot with an action before running it.");
       return;
     }
@@ -469,13 +492,13 @@ export class DynamicView implements OnInit, OnDestroy {
     this.saving.set(true);
     try {
       const result = await this.daemon.dispatchActionGroup({
-        artifactId: repo.id,
-        repoRoot: repo.path,
+        artifactId: this.scopeArtifactId() ?? this.artifact()?.id ?? undefined,
+        repoRoot: repoRoot ?? block.terminal?.expectedRepoRoot,
         label: `${preset.name}: ${block.title}`,
         terminals: [{
           slotId: block.id,
           actionId: block.terminal?.expectedActionId,
-          repoRoot: block.terminal?.expectedRepoRoot ?? repo.path,
+          repoRoot: block.terminal?.expectedRepoRoot ?? repoRoot ?? undefined,
           title: block.title,
         }],
       });
@@ -565,7 +588,7 @@ export class DynamicView implements OnInit, OnDestroy {
     this.configuringBlockId.set(block.id);
     this.terminalConfigDraft.set({
       expectedActionId: block.terminal?.expectedActionId ?? "",
-      expectedRepoRoot: block.terminal?.expectedRepoRoot ?? this.artifact()?.path ?? "",
+      expectedRepoRoot: block.terminal?.expectedRepoRoot ?? this.effectiveRepoRoot() ?? "",
       expectedCommand: block.terminal?.expectedCommand ?? "",
       labelIncludes: block.terminal?.match?.labelIncludes ?? "",
     });
@@ -583,12 +606,24 @@ export class DynamicView implements OnInit, OnDestroy {
     this.sessionStatusFilter.set(value === "running" || value === "ended" ? value : "all");
   }
 
+  clearScope(): void {
+    this.scopeArtifactId.set(null);
+    this.scopeRepoRoot.set(null);
+    const url = new URL(location.href);
+    url.searchParams.delete("artifactId");
+    url.searchParams.delete("repoRoot");
+    history.replaceState(null, "", url);
+    void Promise.all([this.refreshPresets(), this.refreshTerminalSessions(), this.refreshActionGroups()]).then(() => {
+      this.selectInitialPreset();
+    });
+  }
+
   async saveTerminalConfig(blockId: string): Promise<void> {
     const preset = this.selectedPreset();
     if (!preset) return;
     const draft = this.terminalConfigDraft();
     const expectedActionId = draft.expectedActionId.trim();
-    const expectedRepoRoot = draft.expectedRepoRoot.trim() || this.artifact()?.path;
+    const expectedRepoRoot = draft.expectedRepoRoot.trim() || this.effectiveRepoRoot() || undefined;
     const expectedCommand = draft.expectedCommand.trim();
     const labelIncludes = draft.labelIncludes.trim();
     const next = this.clonePreset(preset);
@@ -687,11 +722,11 @@ export class DynamicView implements OnInit, OnDestroy {
   }
 
   openStandalone(): void {
-    const artifactId = this.artifact()?.id;
-    if (!artifactId) return;
-    const presetId = this.selectedPresetId();
-    const qs = presetId ? `?presetId=${encodeURIComponent(presetId)}` : "";
-    window.open(`/artifact/${encodeURIComponent(artifactId)}/dynamic-view/standalone${qs}`, "_blank", "noopener,noreferrer");
+    window.open(actionBoardStandaloneUrl({
+      presetId: this.selectedPresetId(),
+      artifactId: this.scopeArtifactId() ?? this.artifact()?.id,
+      repoRoot: this.scopeRepoRoot(),
+    }), "_blank", "noopener,noreferrer");
   }
 
   blockFor(id: string): ControlBlock | null {
@@ -778,14 +813,14 @@ export class DynamicView implements OnInit, OnDestroy {
   terminalConfig(block: ControlBlock): TerminalConfigDraft {
     return {
       expectedActionId: block.terminal?.expectedActionId ?? "",
-      expectedRepoRoot: block.terminal?.expectedRepoRoot ?? this.artifact()?.path ?? "",
+      expectedRepoRoot: block.terminal?.expectedRepoRoot ?? this.effectiveRepoRoot() ?? "",
       expectedCommand: block.terminal?.expectedCommand ?? "",
       labelIncludes: block.terminal?.match?.labelIncludes ?? "",
     };
   }
 
   isRunnableTerminalBlock(block: ControlBlock): boolean {
-    return block.kind === "terminal" && Boolean(block.terminal?.expectedActionId && (block.terminal?.expectedRepoRoot || this.artifact()?.path));
+    return block.kind === "terminal" && Boolean(block.terminal?.expectedActionId && (block.terminal?.expectedRepoRoot || this.effectiveRepoRoot()));
   }
 
   isSessionBoundElsewhere(runId: string, blockId: string): boolean {
@@ -888,6 +923,12 @@ export class DynamicView implements OnInit, OnDestroy {
     }
   }
 
+  private initializeScopeFromLocation(): void {
+    const scope = parseDynamicViewScope(location.search);
+    this.scopeArtifactId.set(scope.artifactId ?? this.nav.selectedArtifactId());
+    this.scopeRepoRoot.set(scope.repoRoot ?? null);
+  }
+
   private async updatePreset(preset: ControlPanelPreset): Promise<void> {
     this.saving.set(true);
     try {
@@ -898,7 +939,7 @@ export class DynamicView implements OnInit, OnDestroy {
       this.presets.update((presets) => presets.map((entry) => entry.id === saved.id ? saved : entry));
       this.error.set(null);
     } catch (err) {
-      this.error.set(err instanceof Error ? err.message : "Could not save Dynamic View preset.");
+      this.error.set(err instanceof Error ? err.message : "Could not save Action Board preset.");
     } finally {
       this.saving.set(false);
     }

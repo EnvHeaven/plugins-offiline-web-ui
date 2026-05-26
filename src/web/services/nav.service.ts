@@ -1,8 +1,13 @@
 import { Injectable, signal, computed } from "@angular/core";
+import {
+  ACTION_BOARD_ROUTE,
+  ACTION_BOARD_STANDALONE_ROUTE,
+  buildActionBoardLegacyRedirect,
+} from "../app/views/dynamic-view/dynamic-view.constants";
 
-export type ViewId = "home" | "artifacts" | "detail" | "settings";
+export type ViewId = "home" | "artifacts" | "dynamic-view" | "detail" | "settings";
 
-export type DetailTab = "overview" | "versions" | "actions" | "tree" | "logs" | "dynamic-view";
+export type DetailTab = "overview" | "versions" | "actions" | "tree" | "logs";
 
 export interface NavState {
   view: ViewId;
@@ -11,7 +16,7 @@ export interface NavState {
   dynamicViewStandalone: boolean;
 }
 
-const VALID_TABS: DetailTab[] = ["overview", "versions", "actions", "tree", "logs", "dynamic-view"];
+const VALID_TABS: DetailTab[] = ["overview", "versions", "actions", "tree", "logs"];
 
 @Injectable({ providedIn: "root" })
 export class NavService {
@@ -36,16 +41,26 @@ export class NavService {
     this.state.update((s) => ({
       ...s,
       view,
-      artifactId: artifactId ?? s.artifactId,
+      artifactId: view === "dynamic-view" ? artifactId ?? null : artifactId ?? s.artifactId,
       detailTab: "overview",
       dynamicViewStandalone: false,
     }));
     this.syncPath();
   }
 
-  openArtifactDetail(artifactId: string, tab: DetailTab = "overview", standalone = false): void {
-    this.state.set({ view: "detail", artifactId, detailTab: tab, dynamicViewStandalone: standalone && tab === "dynamic-view" });
+  openArtifactDetail(artifactId: string, tab: DetailTab = "overview"): void {
+    this.state.set({ view: "detail", artifactId, detailTab: tab, dynamicViewStandalone: false });
     this.syncPath();
+  }
+
+  openDynamicView(options: { artifactId?: string | null; standalone?: boolean; replace?: boolean } = {}): void {
+    this.state.set({
+      view: "dynamic-view",
+      artifactId: options.artifactId ?? null,
+      detailTab: "overview",
+      dynamicViewStandalone: options.standalone ?? false,
+    });
+    this.syncPath(options.replace ?? false);
   }
 
   setDetailTab(tab: DetailTab): void {
@@ -67,15 +82,18 @@ export class NavService {
     let path = "/";
     if (s.view === "detail" && s.artifactId) {
       path = `/artifact/${encodeURIComponent(s.artifactId)}/${s.detailTab}`;
-      if (s.detailTab === "dynamic-view" && s.dynamicViewStandalone) {
-        path += "/standalone";
+    } else if (s.view === "dynamic-view") {
+      path = s.dynamicViewStandalone ? ACTION_BOARD_STANDALONE_ROUTE : ACTION_BOARD_ROUTE;
+      if (s.artifactId) {
+        path += `?artifactId=${encodeURIComponent(s.artifactId)}`;
       }
     } else if (s.view === "settings") {
       path = "/settings";
     } else if (s.view === "artifacts") {
       path = "/artifacts";
     }
-    if (location.pathname !== path) {
+    const current = `${location.pathname}${location.search}`;
+    if (current !== path) {
       if (replace) {
         history.replaceState(null, "", path);
       } else {
@@ -87,8 +105,27 @@ export class NavService {
   private restoreFromPath(): void {
     const raw = location.pathname.replace(/^\/+/, "");
     const parts = raw.split("/").filter(Boolean);
+    const legacyRedirect = buildActionBoardLegacyRedirect(location.pathname, location.search);
 
-    if (parts[0] === "artifact" && parts[1]) {
+    if (legacyRedirect) {
+      const params = new URLSearchParams(legacyRedirect.split("?")[1] ?? "");
+      const targetParts = legacyRedirect.split("?")[0]?.replace(/^\/+/, "").split("/").filter(Boolean) ?? [];
+      history.replaceState(null, "", legacyRedirect);
+      this.state.set({
+        view: "dynamic-view",
+        artifactId: params.get("artifactId"),
+        detailTab: "overview",
+        dynamicViewStandalone: targetParts[1] === "standalone",
+      });
+    } else if (parts[0] === "action-board") {
+      const scope = new URLSearchParams(location.search);
+      this.state.set({
+        view: "dynamic-view",
+        artifactId: scope.get("artifactId"),
+        detailTab: "overview",
+        dynamicViewStandalone: parts[1] === "standalone",
+      });
+    } else if (parts[0] === "artifact" && parts[1]) {
       const artifactId = decodeURIComponent(parts[1]);
       const tab = (VALID_TABS.includes(parts[2] as DetailTab)
         ? parts[2]
@@ -97,7 +134,7 @@ export class NavService {
         view: "detail",
         artifactId,
         detailTab: tab,
-        dynamicViewStandalone: tab === "dynamic-view" && parts[3] === "standalone",
+        dynamicViewStandalone: false,
       });
     } else if (parts[0] === "settings") {
       this.state.set({ view: "settings", artifactId: null, detailTab: "overview", dynamicViewStandalone: false });

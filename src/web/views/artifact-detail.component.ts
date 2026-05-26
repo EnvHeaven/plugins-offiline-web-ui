@@ -14,9 +14,8 @@ import {
 } from "../services/daemon.service";
 import { NavService } from "../services/nav.service";
 import { VersionPanelComponent, TerminalPanelComponent, TerminalExitEvent } from "@jovdk-web";
-import { DynamicView } from "../app/views/dynamic-view/dynamic-view";
 
-type DetailTab = "overview" | "versions" | "actions" | "tree" | "logs" | "dynamic-view";
+type DetailTab = "overview" | "versions" | "actions" | "tree" | "logs";
 type RunMode = "stream" | "background";
 type ActionOrderScope = "actions" | "header";
 
@@ -93,7 +92,7 @@ function orderActions(actions: ActionDefinition[], actionIds: string[]): ActionD
 @Component({
   selector: "eh-artifact-detail",
   standalone: true,
-  imports: [FormsModule, VersionPanelComponent, TerminalPanelComponent, DynamicView],
+  imports: [FormsModule, VersionPanelComponent, TerminalPanelComponent],
   templateUrl: './artifact-detail.component.html',
   styleUrl: './artifact-detail.component.css',
 })
@@ -125,7 +124,6 @@ export class ArtifactDetailComponent {
     { id: "actions", label: "Actions" },
     { id: "tree", label: "Tree" },
     { id: "logs", label: "Dev Tools" },
-    { id: "dynamic-view", label: "Dynamic View" },
   ];
 
   readonly artifact = computed(() => {

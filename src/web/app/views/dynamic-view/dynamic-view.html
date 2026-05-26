@@ -1,9 +1,15 @@
 <section class="dynamic-view-shell" [class.standalone]="standaloneMode">
   <header class="dynamic-view-header">
     <div>
-      <p class="eyebrow">Dynamic View</p>
-      <h2>{{ artifact()?.name ?? 'Artifact' }}</h2>
-      <p class="repo-path">{{ artifact()?.path ?? 'No artifact selected' }}</p>
+      <p class="eyebrow">{{ label }}</p>
+      <h2>{{ artifact()?.name ?? (effectiveRepoRoot() ? 'Repo scope' : 'Global workspace') }}</h2>
+      <p class="repo-path">{{ effectiveRepoRoot() ?? 'All presets and daemon sessions' }}</p>
+      <div class="scope-row">
+        <span class="scope-chip">{{ scopeLabel() }}</span>
+        @if (scopeArtifactId() || scopeRepoRoot()) {
+          <button class="scope-clear" (click)="clearScope()">Clear scope</button>
+        }
+      </div>
     </div>
 
     <div class="preset-strip">
@@ -72,8 +78,8 @@
     } @else {
       <div class="empty-state">
         <div class="empty-icon">DV</div>
-        <h3>No Dynamic View preset</h3>
-        <p>Create one to reserve terminal slots, status blocks, and external links for this artifact.</p>
+        <h3>No Action Board preset</h3>
+        <p>Create one to reserve terminal slots, status blocks, and external links for this workspace.</p>
         <button class="primary-button" (click)="createPreset()">New preset</button>
       </div>
     }
@@ -340,13 +346,13 @@
       </div>
     } @else if (block.kind === 'status') {
       <div class="status-grid">
-        <div><span>Artifact</span><strong>{{ artifact()?.id ?? 'unknown' }}</strong></div>
+        <div><span>Artifact</span><strong>{{ scopeArtifactId() ?? artifact()?.id ?? 'global' }}</strong></div>
         <div><span>Preset</span><strong>{{ selectedPreset()?.name ?? 'none' }}</strong></div>
         <div><span>Running</span><strong>{{ runningSessionCount() }}</strong></div>
         <div><span>Completed</span><strong>{{ completedSessionCount() }}</strong></div>
         <div><span>Stopped or failed</span><strong>{{ stoppedSessionCount() }}</strong></div>
         <div><span>Action group</span><strong>{{ selectedActionGroup()?.status ?? 'none' }}</strong></div>
-        <div><span>Repo</span><strong>{{ artifact()?.path ?? 'unknown' }}</strong></div>
+        <div><span>Repo</span><strong>{{ effectiveRepoRoot() ?? 'global' }}</strong></div>
       </div>
       <div class="session-compact-list">
         <div class="compact-list-header">

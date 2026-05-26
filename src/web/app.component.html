@@ -265,6 +265,9 @@
           @if (nav.currentView() === 'artifacts') {
             <eh-artifacts-list class="block h-full"></eh-artifacts-list>
           }
+          @if (nav.currentView() === 'dynamic-view') {
+            <app-dynamic-view class="block h-full" [standaloneMode]="false"></app-dynamic-view>
+          }
           @if (nav.currentView() === 'detail') {
             <eh-artifact-detail class="block h-full"></eh-artifact-detail>
           }
