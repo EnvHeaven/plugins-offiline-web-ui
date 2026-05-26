@@ -39,6 +39,7 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
   private fitAddon: FitAddon | null = null;
   private socket: WebSocket | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private domCleanup: Array<() => void> = [];
 
   ngAfterViewInit(): void {
     this.initTerminal();
@@ -114,7 +115,7 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
           exitCode?: number;
           status?: string;
         };
-        if (msg.type === 'output' && msg.data) {
+        if ((msg.type === 'prelude' || msg.type === 'output') && msg.data) {
           term.write(msg.data, () => {
             term.scrollToBottom();
           });
@@ -143,10 +144,10 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
       this.connected.set(false);
     });
 
+    term.attachCustomKeyEventHandler((event) => this.handleTerminalKey(event));
+
     term.onData((data) => {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'stdin', data }));
-      }
+      this.sendTerminalInput(data);
     });
 
     term.onResize(({ cols, rows }) => {
@@ -159,11 +160,16 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
       try { fitAddon.fit(); } catch { /* ignore */ }
     });
     this.resizeObserver.observe(this.terminalHost.nativeElement);
+    this.bindClipboardHandlers();
   }
 
   private dispose(): void {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    for (const cleanup of this.domCleanup) {
+      cleanup();
+    }
+    this.domCleanup = [];
     this.socket?.close();
     this.socket = null;
     this.terminal?.dispose();
@@ -171,5 +177,120 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
     this.fitAddon = null;
     this.connected.set(false);
     this.ended.set(false);
+  }
+
+  private bindClipboardHandlers(): void {
+    const host = this.terminalHost.nativeElement;
+
+    const onPaste = (event: ClipboardEvent): void => {
+      const text = event.clipboardData?.getData('text/plain') ?? '';
+      if (!text) return;
+      event.preventDefault();
+      this.sendPastedText(text);
+    };
+
+    const onContextMenu = (event: MouseEvent): void => {
+      if (event.shiftKey) return;
+      event.preventDefault();
+      if (this.hasTerminalSelection()) {
+        void this.copySelectionAndClear();
+        return;
+      }
+      void this.pasteFromClipboard();
+    };
+
+    host.addEventListener('paste', onPaste);
+    host.addEventListener('contextmenu', onContextMenu);
+    this.domCleanup.push(
+      () => host.removeEventListener('paste', onPaste),
+      () => host.removeEventListener('contextmenu', onContextMenu),
+    );
+  }
+
+  private handleTerminalKey(event: KeyboardEvent): boolean {
+    if (this.isCopyShortcut(event)) {
+      if (this.hasTerminalSelection()) {
+        this.preventTerminalShortcut(event);
+        void this.copySelectionAndClear();
+        return false;
+      }
+      if (event.metaKey) {
+        this.preventTerminalShortcut(event);
+        return false;
+      }
+      return !event.metaKey;
+    }
+
+    if (this.isPasteShortcut(event)) {
+      this.preventTerminalShortcut(event);
+      void this.pasteFromClipboard();
+      return false;
+    }
+
+    return true;
+  }
+
+  private isCopyShortcut(event: KeyboardEvent): boolean {
+    return (event.key.toLowerCase() === 'c') && (event.ctrlKey || event.metaKey) && !event.altKey;
+  }
+
+  private isPasteShortcut(event: KeyboardEvent): boolean {
+    if (event.key.toLowerCase() !== 'v' || event.altKey) return false;
+    return event.metaKey || event.ctrlKey;
+  }
+
+  private preventTerminalShortcut(event: KeyboardEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  private hasTerminalSelection(): boolean {
+    return this.terminal?.hasSelection() === true;
+  }
+
+  private async copySelectionAndClear(): Promise<void> {
+    const selection = this.terminal?.getSelection() ?? '';
+    if (!selection) return;
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard write is unavailable.');
+      }
+      await navigator.clipboard.writeText(selection);
+      this.terminal?.clearSelection();
+    } catch (error) {
+      console.warn('[envheaven terminal] Clipboard copy failed.', this.describeClipboardError(error));
+    }
+  }
+
+  private async pasteFromClipboard(): Promise<void> {
+    try {
+      if (!navigator.clipboard?.readText) {
+        throw new Error('Clipboard read is unavailable.');
+      }
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        this.sendPastedText(text);
+      }
+    } catch (error) {
+      console.warn('[envheaven terminal] Clipboard paste failed.', this.describeClipboardError(error));
+    }
+  }
+
+  private sendPastedText(text: string): void {
+    const paste = (this.terminal as unknown as { paste?: (data: string) => void } | null)?.paste;
+    if (typeof paste === 'function') {
+      paste.call(this.terminal, text);
+      return;
+    }
+    this.sendTerminalInput(text);
+  }
+
+  private sendTerminalInput(data: string): void {
+    if (!data || this.socket?.readyState !== WebSocket.OPEN) return;
+    this.socket.send(JSON.stringify({ type: 'stdin', data }));
+  }
+
+  private describeClipboardError(error: unknown): string {
+    return error instanceof Error ? `${error.name}: ${error.message}` : 'unknown error';
   }
 }

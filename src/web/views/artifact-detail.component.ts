@@ -323,6 +323,18 @@ export class ArtifactDetailComponent {
     return run ? `${run.actionLabel} #${run.runId.slice(0, 6)}` : source;
   });
 
+  readonly selectedActionRun = computed(() => {
+    const source = this.selectedConsoleSource();
+    if (source === "daemon") return null;
+    return this.daemon.actionRuns().find((r) => r.runId === source) ?? null;
+  });
+
+  readonly hiddenPtyTerminalRun = computed(() => {
+    const run = this.selectedActionRun();
+    if (!run || run.terminalMode !== "pty") return null;
+    return this.activePtyRunId() === run.runId ? null : run;
+  });
+
   readonly isActiveSourceLive = computed((): boolean => {
     const source = this.selectedConsoleSource();
     if (source === "daemon") return this.daemon.isConnected();
