@@ -106,6 +106,154 @@ export interface ActionRunEntry {
   terminalMode: "pty" | "pipe";
 }
 
+export type TerminalSessionKind = "pty" | "pipe" | "log";
+
+export type TerminalSessionStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "terminated"
+  | "unknown";
+
+export interface TerminalSessionSummary {
+  id: string;
+  runId: string;
+  actionId?: string;
+  actionLabel?: string;
+  actionRunId?: string;
+  actionGroupId?: string;
+  artifactId?: string;
+  repoRoot?: string;
+  command?: string;
+  kind: TerminalSessionKind;
+  status: TerminalSessionStatus;
+  startedAt?: number;
+  endedAt?: number;
+  exitCode?: number | null;
+  hasReplay?: boolean;
+  canAttach: boolean;
+  canStop: boolean;
+  title?: string;
+  prelude?: string;
+}
+
+export type ActionGroupStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "terminated";
+
+export interface ActionGroupSummary {
+  id: string;
+  rootRunId?: string;
+  artifactId?: string;
+  repoRoot?: string;
+  label?: string;
+  status: ActionGroupStatus;
+  runIds: string[];
+  createdAt: number;
+  updatedAt: number;
+  endedAt?: number;
+}
+
+export interface ActionGroupDispatchTerminalRequest {
+  slotId?: string;
+  actionId?: string;
+  repoRoot?: string;
+  runCommand?: string;
+  title?: string;
+}
+
+export interface ActionGroupDispatchRequest {
+  artifactId?: string;
+  repoRoot?: string;
+  label?: string;
+  terminals: ActionGroupDispatchTerminalRequest[];
+}
+
+export interface ActionGroupDispatchResult {
+  ok: true;
+  group: ActionGroupSummary;
+  runs: TerminalSessionSummary[];
+  slotRunMap: Record<string, string>;
+}
+
+export interface ActionGroupFilters {
+  artifactId?: string;
+  repoRoot?: string;
+  status?: ActionGroupStatus;
+}
+
+export interface TerminalSessionFilters {
+  artifactId?: string;
+  repoRoot?: string;
+  actionGroupId?: string;
+  status?: TerminalSessionStatus;
+}
+
+export type ControlBlockKind =
+  | "terminal"
+  | "status"
+  | "externalLinks"
+  | "placeholder"
+  | "notes"
+  | (string & {});
+
+export interface ControlPanelPreset {
+  id: string;
+  artifactId?: string;
+  repoRoot?: string;
+  name: string;
+  layout: ControlLayoutNode;
+  blocks: ControlBlock[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ControlLayoutNode =
+  | { type: "split"; direction: "horizontal" | "vertical"; sizes?: number[]; children: ControlLayoutNode[] }
+  | { type: "stack"; activeBlockId?: string; blockIds: string[] }
+  | { type: "block"; blockId: string };
+
+export interface ControlBlock {
+  id: string;
+  kind: ControlBlockKind;
+  title: string;
+  terminal?: ControlTerminalBinding;
+  status?: Record<string, unknown>;
+  externalLinks?: ControlExternalLink[];
+}
+
+export interface ControlTerminalBinding {
+  slotId: string;
+  runId?: string;
+  expectedActionId?: string;
+  expectedRepoRoot?: string;
+  expectedCommand?: string;
+  match?: {
+    actionId?: string;
+    repoRoot?: string;
+    actionGroupId?: string;
+    labelIncludes?: string;
+  };
+}
+
+export interface ControlExternalLink {
+  id: string;
+  label: string;
+  url: string;
+}
+
+export interface ActionGroupStopResult {
+  ok: boolean;
+  actionGroupId: string;
+  group?: ActionGroupSummary;
+  stoppedSessionIds: string[];
+  alreadyCompletedSessionIds: string[];
+}
+
 export interface ActionOrderPreferences {
   actionIds: string[];
   headerActionIds: string[];
@@ -221,6 +369,8 @@ export class DaemonService {
       await this.refreshVersions();
     } else if (type === "actions:updated") {
       await this.refreshActions();
+    } else if (type === "action-group:created" || type === "action-group:updated") {
+      await this.restoreRunsFromDaemon();
     } else if (type === "repos:pinned-updated") {
       await this.refreshPinnedArtifacts();
     } else if (type === "action:complete") {
@@ -465,7 +615,7 @@ export class DaemonService {
 
   async stopAction(runId: string): Promise<void> {
     try {
-      await postJson(`/api/actions/stop/${runId}`, {});
+      await this.stopActionRun(runId);
       this.actionRuns.update((runs) =>
         runs.map((r) =>
           r.runId === runId && r.status === "running"
@@ -477,6 +627,96 @@ export class DaemonService {
       const msg = err instanceof Error ? err.message : "Failed to stop action.";
       this.addNotification("error", "Stop failed", msg);
     }
+  }
+
+  async listTerminalSessions(filters: TerminalSessionFilters = {}): Promise<TerminalSessionSummary[]> {
+    const params = new URLSearchParams();
+    const repoRoot = filters.repoRoot ?? this.activeRepoPath() ?? undefined;
+    if (filters.artifactId) params.set("artifactId", filters.artifactId);
+    if (repoRoot) params.set("repoRoot", repoRoot);
+    if (filters.actionGroupId) params.set("actionGroupId", filters.actionGroupId);
+    if (filters.status) params.set("status", filters.status);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    const payload = await readJson<{ sessions?: TerminalSessionSummary[] }>(`/api/terminal-sessions${qs}`);
+    return payload.sessions ?? [];
+  }
+
+  async stopTerminalSession(runId: string): Promise<void> {
+    await this.stopActionRun(runId);
+  }
+
+  async stopActionRun(runId: string): Promise<void> {
+    await postJson(`/api/actions/stop/${encodeURIComponent(runId)}`, {});
+  }
+
+  async stopActionGroup(actionGroupId: string): Promise<ActionGroupStopResult> {
+    return await postJsonRead<ActionGroupStopResult>(
+      `/api/action-groups/${encodeURIComponent(actionGroupId)}/stop`,
+      {},
+    );
+  }
+
+  async listActionGroups(filters: ActionGroupFilters = {}): Promise<ActionGroupSummary[]> {
+    const params = new URLSearchParams();
+    const repoRoot = filters.repoRoot ?? this.activeRepoPath() ?? undefined;
+    if (filters.artifactId) params.set("artifactId", filters.artifactId);
+    if (repoRoot) params.set("repoRoot", repoRoot);
+    if (filters.status) params.set("status", filters.status);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    const payload = await readJson<{ groups?: ActionGroupSummary[] }>(`/api/action-groups${qs}`);
+    return payload.groups ?? [];
+  }
+
+  async dispatchActionGroup(request: ActionGroupDispatchRequest): Promise<ActionGroupDispatchResult> {
+    const repoRoot = request.repoRoot ?? this.activeRepoPath() ?? undefined;
+    return await postJsonRead<ActionGroupDispatchResult>("/api/action-groups/dispatch", {
+      ...request,
+      repoRoot,
+    });
+  }
+
+  async listControlPanelPresets(filters: { artifactId?: string; repoRoot?: string } = {}): Promise<ControlPanelPreset[]> {
+    const params = new URLSearchParams();
+    const repoRoot = filters.repoRoot ?? this.activeRepoPath() ?? undefined;
+    if (filters.artifactId) params.set("artifactId", filters.artifactId);
+    if (repoRoot) params.set("repoRoot", repoRoot);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    const payload = await readJson<{ presets?: ControlPanelPreset[] }>(`/api/control-panel/presets${qs}`);
+    return payload.presets ?? [];
+  }
+
+  async createControlPanelPreset(preset: ControlPanelPreset): Promise<ControlPanelPreset> {
+    const repoRoot = preset.repoRoot ?? this.activeRepoPath();
+    const payload = await postJsonRead<{ preset: ControlPanelPreset }>("/api/control-panel/presets", {
+      ...preset,
+      repoRoot,
+    });
+    return payload.preset;
+  }
+
+  async updateControlPanelPreset(presetId: string, preset: ControlPanelPreset): Promise<ControlPanelPreset> {
+    const repoRoot = preset.repoRoot ?? this.activeRepoPath();
+    const payload = await putJsonRead<{ preset: ControlPanelPreset }>(
+      `/api/control-panel/presets/${encodeURIComponent(presetId)}`,
+      { ...preset, id: presetId, repoRoot },
+    );
+    return payload.preset;
+  }
+
+  async deleteControlPanelPreset(presetId: string, repoRoot = this.activeRepoPath()): Promise<void> {
+    const qs = repoRoot ? `?repoRoot=${encodeURIComponent(repoRoot)}` : "";
+    await deleteReq(`/api/control-panel/presets/${encodeURIComponent(presetId)}${qs}`);
+  }
+
+  async duplicateControlPanelPreset(preset: ControlPanelPreset, name = `${preset.name} copy`): Promise<ControlPanelPreset> {
+    const duplicate: ControlPanelPreset = {
+      ...preset,
+      id: crypto.randomUUID(),
+      name,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    return await this.createControlPanelPreset(duplicate);
   }
 
   async putActionConfig(action: ActionDefinition): Promise<void> {
@@ -689,6 +929,19 @@ async function putJson(url: string, body: unknown): Promise<void> {
   if (!response.ok) {
     throw new Error(await extractErrorMessage(response, resolved));
   }
+}
+
+async function putJsonRead<T>(url: string, body: unknown): Promise<T> {
+  const resolved = apiUrl(url);
+  const response = await fetch(resolved, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, resolved));
+  }
+  return (await response.json()) as T;
 }
 
 async function deleteReq(url: string): Promise<void> {

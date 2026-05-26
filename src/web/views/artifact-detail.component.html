@@ -1099,5 +1099,9 @@
           </div>
         }
 
+        @if (nav.activeDetailTab() === 'dynamic-view') {
+          <app-dynamic-view class="block min-h-full" [standaloneMode]="false"></app-dynamic-view>
+        }
+
       </div>
     </div>

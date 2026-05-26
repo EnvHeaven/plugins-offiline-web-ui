@@ -2,13 +2,16 @@ import { Injectable, signal, computed } from "@angular/core";
 
 export type ViewId = "home" | "artifacts" | "detail" | "settings";
 
+export type DetailTab = "overview" | "versions" | "actions" | "tree" | "logs" | "dynamic-view";
+
 export interface NavState {
   view: ViewId;
   artifactId: string | null;
-  detailTab: "overview" | "versions" | "actions" | "tree" | "logs";
+  detailTab: DetailTab;
+  dynamicViewStandalone: boolean;
 }
 
-const VALID_TABS: NavState["detailTab"][] = ["overview", "versions", "actions", "tree", "logs"];
+const VALID_TABS: DetailTab[] = ["overview", "versions", "actions", "tree", "logs", "dynamic-view"];
 
 @Injectable({ providedIn: "root" })
 export class NavService {
@@ -16,11 +19,13 @@ export class NavService {
     view: "home",
     artifactId: null,
     detailTab: "overview",
+    dynamicViewStandalone: false,
   });
 
   readonly currentView = computed(() => this.state().view);
   readonly selectedArtifactId = computed(() => this.state().artifactId);
   readonly activeDetailTab = computed(() => this.state().detailTab);
+  readonly isDynamicViewStandalone = computed(() => this.state().dynamicViewStandalone);
 
   constructor() {
     this.restoreFromPath();
@@ -33,22 +38,27 @@ export class NavService {
       view,
       artifactId: artifactId ?? s.artifactId,
       detailTab: "overview",
+      dynamicViewStandalone: false,
     }));
     this.syncPath();
   }
 
-  openArtifactDetail(artifactId: string, tab: NavState["detailTab"] = "overview"): void {
-    this.state.set({ view: "detail", artifactId, detailTab: tab });
+  openArtifactDetail(artifactId: string, tab: DetailTab = "overview", standalone = false): void {
+    this.state.set({ view: "detail", artifactId, detailTab: tab, dynamicViewStandalone: standalone && tab === "dynamic-view" });
     this.syncPath();
   }
 
-  setDetailTab(tab: NavState["detailTab"]): void {
-    this.state.update((s) => ({ ...s, detailTab: tab }));
+  setDetailTab(tab: DetailTab): void {
+    this.state.update((s) => ({ ...s, detailTab: tab, dynamicViewStandalone: false }));
     this.syncPath(true);
   }
 
+  setActiveDetailTab(tab: DetailTab): void {
+    this.setDetailTab(tab);
+  }
+
   goBack(): void {
-    this.state.update((s) => ({ ...s, view: "artifacts", artifactId: null }));
+    this.state.update((s) => ({ ...s, view: "artifacts", artifactId: null, dynamicViewStandalone: false }));
     this.syncPath();
   }
 
@@ -57,6 +67,9 @@ export class NavService {
     let path = "/";
     if (s.view === "detail" && s.artifactId) {
       path = `/artifact/${encodeURIComponent(s.artifactId)}/${s.detailTab}`;
+      if (s.detailTab === "dynamic-view" && s.dynamicViewStandalone) {
+        path += "/standalone";
+      }
     } else if (s.view === "settings") {
       path = "/settings";
     } else if (s.view === "artifacts") {
@@ -77,16 +90,21 @@ export class NavService {
 
     if (parts[0] === "artifact" && parts[1]) {
       const artifactId = decodeURIComponent(parts[1]);
-      const tab = (VALID_TABS.includes(parts[2] as NavState["detailTab"])
+      const tab = (VALID_TABS.includes(parts[2] as DetailTab)
         ? parts[2]
-        : "overview") as NavState["detailTab"];
-      this.state.set({ view: "detail", artifactId, detailTab: tab });
+        : "overview") as DetailTab;
+      this.state.set({
+        view: "detail",
+        artifactId,
+        detailTab: tab,
+        dynamicViewStandalone: tab === "dynamic-view" && parts[3] === "standalone",
+      });
     } else if (parts[0] === "settings") {
-      this.state.set({ view: "settings", artifactId: null, detailTab: "overview" });
+      this.state.set({ view: "settings", artifactId: null, detailTab: "overview", dynamicViewStandalone: false });
     } else if (parts[0] === "artifacts") {
-      this.state.set({ view: "artifacts", artifactId: null, detailTab: "overview" });
+      this.state.set({ view: "artifacts", artifactId: null, detailTab: "overview", dynamicViewStandalone: false });
     } else {
-      this.state.set({ view: "home", artifactId: null, detailTab: "overview" });
+      this.state.set({ view: "home", artifactId: null, detailTab: "overview", dynamicViewStandalone: false });
     }
   }
 }

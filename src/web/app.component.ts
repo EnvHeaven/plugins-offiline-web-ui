@@ -6,6 +6,7 @@ import { HomeComponent } from "./views/home.component";
 import { ArtifactsListComponent } from "./views/artifacts-list.component";
 import { ArtifactDetailComponent } from "./views/artifact-detail.component";
 import { SettingsComponent } from "./views/settings.component";
+import { DynamicView } from "./app/views/dynamic-view/dynamic-view";
 
 @Component({
   selector: "app-root",
@@ -15,6 +16,7 @@ import { SettingsComponent } from "./views/settings.component";
     ArtifactsListComponent,
     ArtifactDetailComponent,
     SettingsComponent,
+    DynamicView,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',

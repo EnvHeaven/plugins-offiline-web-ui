@@ -1,0 +1,405 @@
+<section class="dynamic-view-shell" [class.standalone]="standaloneMode">
+  <header class="dynamic-view-header">
+    <div>
+      <p class="eyebrow">Dynamic View</p>
+      <h2>{{ artifact()?.name ?? 'Artifact' }}</h2>
+      <p class="repo-path">{{ artifact()?.path ?? 'No artifact selected' }}</p>
+    </div>
+
+    <div class="preset-strip">
+      @for (preset of presets(); track preset.id) {
+        <button
+          class="preset-pill"
+          [class.active]="selectedPresetId() === preset.id"
+          (click)="selectPreset(preset.id)">
+          {{ preset.name }}
+        </button>
+      }
+      @if (presets().length === 0) {
+        <span class="empty-copy">No presets yet</span>
+      }
+    </div>
+  </header>
+
+  @if (error()) {
+    <div class="error-banner">{{ error() }}</div>
+  }
+
+  @if (daemon.error()) {
+    <div class="error-banner">Daemon unavailable. Existing presets remain visible, but sessions and terminal controls may be stale.</div>
+  }
+
+  @if (missingPresetId()) {
+    <div class="warning-banner">
+      Preset #{{ missingPresetId()?.slice(0, 8) }} is missing or was deleted. Showing the first available preset.
+    </div>
+  }
+
+  @if (selectedPreset()) {
+    <div class="group-bar">
+      <div>
+        <span class="group-label">Action group</span>
+        @if (selectedActionGroup(); as group) {
+          <strong>{{ group.label ?? group.id }}</strong>
+          <code>#{{ group.id.slice(0, 8) }}</code>
+          <span
+            class="status-pill"
+            [class.running]="group.status === 'running'"
+            [class.completed]="group.status === 'completed'"
+            [class.terminated]="group.status === 'terminated'"
+            [class.failed]="group.status === 'failed'">
+            {{ group.status }}
+          </span>
+        } @else {
+          <strong>No active group</strong>
+          <span class="muted">Run layout or attach grouped sessions.</span>
+        }
+      </div>
+      <div class="group-actions">
+        <button class="primary-button" [disabled]="runnableTerminalBlocks().length === 0" (click)="runLayout()">Run layout</button>
+        <button [disabled]="!currentActionGroupId()" (click)="stopCurrentGroup()">Stop group</button>
+        <button [disabled]="presetRunningSessionCount() === 0" (click)="stopAllPresetTerminals()">Stop preset terminals</button>
+        <button [disabled]="!selectedPreset()" (click)="clearEndedBindings()">Clear ended bindings</button>
+      </div>
+    </div>
+  }
+
+  <main class="dynamic-view-body">
+    @if (selectedPreset(); as preset) {
+      <ng-container
+        *ngTemplateOutlet="layoutNode; context: { $implicit: preset.layout }">
+      </ng-container>
+    } @else {
+      <div class="empty-state">
+        <div class="empty-icon">DV</div>
+        <h3>No Dynamic View preset</h3>
+        <p>Create one to reserve terminal slots, status blocks, and external links for this artifact.</p>
+        <button class="primary-button" (click)="createPreset()">New preset</button>
+      </div>
+    }
+  </main>
+
+  @if (!standaloneMode) {
+    <footer class="dynamic-toolbar">
+      <div class="toolbar-group">
+        <button (click)="createPreset()">New preset</button>
+        <button [disabled]="!selectedPreset()" (click)="renamePreset()">Rename</button>
+        <button [disabled]="!selectedPreset()" (click)="duplicatePreset()">Duplicate</button>
+        <button class="danger-button" [disabled]="!selectedPreset()" (click)="deletePreset()">Delete</button>
+      </div>
+
+      <div class="toolbar-group">
+        <button [disabled]="!selectedPreset()" (click)="addBlock('terminal')">Add terminal slot</button>
+        <button [disabled]="!selectedPreset()" (click)="addBlock('status')">Add status block</button>
+        <button [disabled]="!selectedPreset()" (click)="addBlock('externalLinks')">Add external links</button>
+      </div>
+
+      <div class="toolbar-group right">
+        <span class="save-state">{{ runnableTerminalBlocks().length }} runnable slots</span>
+        <span class="save-state">
+          {{ saving() ? 'Saving...' : hasDraftChanges() ? 'Unsaved form edits' : 'Auto-saved' }}
+        </span>
+        <button [disabled]="!hasDraftChanges()" (click)="discardDraftChanges()">Discard edits</button>
+        <button [disabled]="!selectedPreset()" (click)="savePreset()">Save layout</button>
+        <button [disabled]="!selectedPreset()" (click)="openStandalone()">Open in new tab</button>
+      </div>
+    </footer>
+  }
+</section>
+
+<ng-template #layoutNode let-node>
+  @if (node.type === 'split') {
+    <div class="layout-split" [class.vertical]="node.direction === 'vertical'">
+      @for (child of node.children; track $index) {
+        <div class="layout-child" [style.flex-basis.%]="node.sizes?.[$index] ?? (100 / node.children.length)">
+          <ng-container *ngTemplateOutlet="layoutNode; context: { $implicit: child }"></ng-container>
+        </div>
+      }
+      @if (!standaloneMode && node.children.length > 1) {
+        <div class="split-controls" [class.vertical]="node.direction === 'vertical'">
+          @for (child of node.children; track $index) {
+            <label>
+              <span>{{ $index + 1 }}</span>
+              <input
+                type="range"
+                min="10"
+                max="90"
+                [ngModel]="node.sizes?.[$index] ?? (100 / node.children.length)"
+                (ngModelChange)="setSplitSize(node, $index, $event)" />
+            </label>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  @if (node.type === 'stack') {
+    <div class="block-frame stack-frame">
+      <div class="stack-tabs">
+        @for (blockId of node.blockIds; track blockId) {
+          @if (blockFor(blockId); as tabBlock) {
+            <button
+              [class.active]="(node.activeBlockId ?? node.blockIds[0]) === blockId"
+              (click)="setStackActive(node, blockId)">
+              {{ tabBlock.title }}
+            </button>
+          }
+        }
+      </div>
+      @if (blockFor(node.activeBlockId ?? node.blockIds[0]); as block) {
+        <ng-container *ngTemplateOutlet="blockHost; context: { $implicit: block }"></ng-container>
+      }
+    </div>
+  }
+
+  @if (node.type === 'block') {
+    @if (blockFor(node.blockId); as block) {
+      <ng-container *ngTemplateOutlet="blockHost; context: { $implicit: block }"></ng-container>
+    } @else {
+      <div class="block-frame missing-block">Missing block: {{ node.blockId }}</div>
+    }
+  }
+</ng-template>
+
+<ng-template #blockHost let-block>
+  <article class="block-frame">
+    <div class="block-header">
+      <div>
+        <h3>{{ block.title }}</h3>
+        <p>
+          {{ block.kind }}
+          @if (isTerminalWaiting(block)) {
+            · waiting
+          }
+          @if (isTerminalMissing(block)) {
+            · missing session
+          }
+        </p>
+      </div>
+      <div class="block-actions">
+        <button title="Rename block" (click)="renameBlock(block.id)">Rename</button>
+        <button title="Duplicate block without copying running session" (click)="duplicateBlock(block.id)">Duplicate</button>
+        <button title="Split right" (click)="splitBlock(block.id, 'horizontal')">Split right</button>
+        <button title="Split down" (click)="splitBlock(block.id, 'vertical')">Split down</button>
+        <button title="Move into stack" (click)="moveBlockToStack(block.id)">Stack</button>
+        @if (block.kind === 'terminal' && block.terminal?.runId) {
+          <button title="Clear session binding without stopping it" (click)="detachSession(block.id)">Detach</button>
+        }
+        <button title="Remove block without stopping sessions" (click)="removeBlock(block.id)">Remove block</button>
+      </div>
+    </div>
+
+    @if (block.kind === 'terminal') {
+      <div class="terminal-block">
+        <div class="terminal-meta">
+          <span>{{ terminalState(block) }}</span>
+          @if (block.terminal?.expectedActionId) {
+            <span>action: {{ block.terminal?.expectedActionId }}</span>
+          }
+          @if (terminalSessionFor(block); as session) {
+            <span>#{{ session.runId.slice(0, 8) }}</span>
+            <span
+              class="status-pill"
+              [class.running]="session.status === 'running'"
+              [class.completed]="session.status === 'completed'"
+              [class.terminated]="session.status === 'terminated'"
+              [class.failed]="session.status === 'failed'">
+              {{ session.status }}
+            </span>
+            @if (session.actionGroupId) {
+              <span>group #{{ session.actionGroupId.slice(0, 8) }}</span>
+            }
+          }
+        </div>
+
+        <div class="terminal-toolbar">
+          <button (click)="configureTerminalBlock(block)">Configure</button>
+          <button class="primary-button" [disabled]="!isRunnableTerminalBlock(block)" (click)="runTerminalBlock(block)">Run</button>
+          <button (click)="openSessionPicker(block.id)">Attach session</button>
+          @if (block.terminal?.runId) {
+            <button (click)="detachSession(block.id)">Detach from slot</button>
+          }
+          @if (terminalSessionFor(block)?.canStop) {
+            <button class="danger-button" (click)="stopTerminal(block)">Stop terminal</button>
+          }
+        </div>
+
+        @if (configuringBlockId() === block.id) {
+          <div class="terminal-config">
+            <label>
+              Action
+              <select
+                [ngModel]="terminalConfigDraft().expectedActionId"
+                (ngModelChange)="updateTerminalConfigDraft({ expectedActionId: $event })">
+                <option value="">Choose action</option>
+                @for (action of availableActions(); track action.id) {
+                  <option [value]="action.id">{{ action.label || action.id }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              Repo root
+              <input
+                [ngModel]="terminalConfigDraft().expectedRepoRoot"
+                (ngModelChange)="updateTerminalConfigDraft({ expectedRepoRoot: $event })" />
+            </label>
+            <label>
+              Command hint
+              <input
+                [ngModel]="terminalConfigDraft().expectedCommand"
+                (ngModelChange)="updateTerminalConfigDraft({ expectedCommand: $event })" />
+            </label>
+            <label>
+              Label contains
+              <input
+                [ngModel]="terminalConfigDraft().labelIncludes"
+                (ngModelChange)="updateTerminalConfigDraft({ labelIncludes: $event })" />
+            </label>
+            <div class="config-actions">
+              <button class="primary-button" (click)="saveTerminalConfig(block.id)">Save slot config</button>
+              <button (click)="closeTerminalConfig()">Cancel</button>
+            </div>
+          </div>
+        }
+
+        @if (isSessionShared(block)) {
+          <div class="shared-warning">
+            This session is attached in {{ sharedSessionCount(block) }} views. Input is shared.
+          </div>
+        }
+
+        @if (isTerminalAttachable(block) && block.terminal?.runId) {
+          <jov-terminal-panel [runId]="block.terminal!.runId!"></jov-terminal-panel>
+        } @else {
+          <div class="slot-placeholder">
+            <h4>
+              @if (isTerminalMissing(block)) {
+                Session unavailable
+              } @else if (block.terminal?.runId) {
+                Session not attachable
+              } @else if (block.terminal?.expectedActionId) {
+                Waiting for matching session
+              } @else {
+                Empty terminal slot
+              }
+            </h4>
+            <p>
+              @if (isTerminalMissing(block)) {
+                The daemon no longer knows this run. It may have restarted.
+              } @else if (block.terminal?.expectedActionId) {
+                Waiting for {{ block.terminal?.expectedActionId }}.
+              } @else {
+                Reserve this slot now, attach an existing session when available.
+              }
+            </p>
+            <div class="slot-actions">
+              <button class="primary-button" (click)="openSessionPicker(block.id)">Attach session</button>
+              <button [disabled]="!isRunnableTerminalBlock(block)" (click)="runTerminalBlock(block)">Run slot</button>
+            </div>
+          </div>
+        }
+
+        @if (sessionPickerBlockId() === block.id) {
+          <div class="session-picker">
+            <div class="picker-header">
+              <strong>Attach existing session</strong>
+              <button (click)="closeSessionPicker()">Close</button>
+            </div>
+            <div class="session-filters">
+              <input
+                placeholder="Search sessions"
+                [ngModel]="sessionSearch()"
+                (ngModelChange)="sessionSearch.set($event)" />
+              <select
+                [ngModel]="sessionStatusFilter()"
+                (ngModelChange)="setSessionStatusFilter($event)">
+                <option value="all">All</option>
+                <option value="running">Running</option>
+                <option value="ended">Ended</option>
+              </select>
+            </div>
+            @for (session of filteredTerminalSessions(); track session.id) {
+              <button class="session-row" (click)="attachSession(block.id, session)">
+                <span>{{ session.title ?? session.actionId ?? session.runId }}</span>
+                <small>
+                  {{ session.kind }} · {{ session.status }} · #{{ session.runId.slice(0, 8) }}
+                  @if (session.actionGroupId) {
+                    · group #{{ session.actionGroupId.slice(0, 8) }}
+                  }
+                  @if (isSessionBoundElsewhere(session.runId, block.id)) {
+                    · already bound
+                  }
+                </small>
+              </button>
+            }
+            @if (filteredTerminalSessions().length === 0) {
+              <p class="empty-copy">No matching daemon sessions known yet.</p>
+            }
+          </div>
+        }
+      </div>
+    } @else if (block.kind === 'status') {
+      <div class="status-grid">
+        <div><span>Artifact</span><strong>{{ artifact()?.id ?? 'unknown' }}</strong></div>
+        <div><span>Preset</span><strong>{{ selectedPreset()?.name ?? 'none' }}</strong></div>
+        <div><span>Running</span><strong>{{ runningSessionCount() }}</strong></div>
+        <div><span>Completed</span><strong>{{ completedSessionCount() }}</strong></div>
+        <div><span>Stopped or failed</span><strong>{{ stoppedSessionCount() }}</strong></div>
+        <div><span>Action group</span><strong>{{ selectedActionGroup()?.status ?? 'none' }}</strong></div>
+        <div><span>Repo</span><strong>{{ artifact()?.path ?? 'unknown' }}</strong></div>
+      </div>
+      <div class="session-compact-list">
+        <div class="compact-list-header">
+          <strong>Known sessions</strong>
+          @if (selectedActionGroup()?.status === 'running') {
+            <button class="danger-button" (click)="stopCurrentGroup()">Stop group</button>
+          }
+        </div>
+        @for (session of terminalSessions().slice(0, 8); track session.id) {
+          <div class="compact-session-row">
+            <span>{{ session.title ?? session.actionId ?? session.runId }}</span>
+            <small>{{ session.kind }} · {{ session.status }} · #{{ session.runId.slice(0, 8) }}</small>
+          </div>
+        }
+        @if (terminalSessions().length === 0) {
+          <p class="empty-copy">No sessions found.</p>
+        }
+      </div>
+    } @else if (block.kind === 'externalLinks') {
+      <div class="links-block">
+        <div class="links-list">
+          @for (link of block.externalLinks ?? []; track link.id) {
+            <div class="link-row">
+              <a [href]="link.url" target="_blank" rel="noreferrer">{{ link.label }}</a>
+              <span>{{ link.url }}</span>
+              <button (click)="editExternalLink(block.id, link)">Edit</button>
+              <button (click)="removeExternalLink(block.id, link.id)">Remove</button>
+            </div>
+          }
+          @if ((block.externalLinks ?? []).length === 0) {
+            <p class="empty-copy">No links in this block.</p>
+          }
+        </div>
+        <div class="link-form">
+          <input
+            placeholder="Label"
+            [ngModel]="linkDraft(block.id).label"
+            (ngModelChange)="updateLinkDraft(block.id, { label: $event })" />
+          <input
+            placeholder="https://..."
+            [ngModel]="linkDraft(block.id).url"
+            (ngModelChange)="updateLinkDraft(block.id, { url: $event })" />
+          <button (click)="addExternalLink(block.id)">Add link</button>
+        </div>
+        @if (linkError(block.id)) {
+          <p class="form-error">{{ linkError(block.id) }}</p>
+        }
+      </div>
+    } @else {
+      <div class="slot-placeholder">
+        <h4>Reserved block</h4>
+        <p>This slot can later become a terminal, status, notes, or another dynamic block.</p>
+      </div>
+    }
+  </article>
+</ng-template>

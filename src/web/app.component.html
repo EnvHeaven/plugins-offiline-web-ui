@@ -1,3 +1,6 @@
+    @if (nav.isDynamicViewStandalone()) {
+      <app-dynamic-view class="block h-screen w-screen bg-bg-base text-tx-primary" [standaloneMode]="true"></app-dynamic-view>
+    } @else {
     <div class="flex h-screen w-screen overflow-hidden bg-bg-base text-tx-primary">
 
       <!-- ══ SIDEBAR ══════════════════════════════════════════ -->
@@ -272,3 +275,4 @@
       </div>
 
     </div>
+    }
