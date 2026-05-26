@@ -1,93 +1,88 @@
+<br />
+
 <p align="center">
   <a href="https://envheaven.com">
     <img src="./docs/readme/logo/envheaven-logo.svg" alt="EnvHeaven" width="96" />
   </a>
+
+  <h1 align="center">EnvHeaven Offline Web UI Plugin</h1>
+
+  <p align="center">
+    Environment hell, inverted.
+  </p>
+
+  <p align="center">
+    <a href="#install">Install</a>
+    ·
+    <a href="#usage">Usage</a>
+    ·
+    <a href="#release-channels">Release Channels</a>
+  </p>
 </p>
 
-# @envheaven/plugins-offline-web-ui
+<div align="center">
 
-> Local Offline Web UI for EnvHeaven daemon state, actions, terminal sessions, and version registry workflows.
+[![npm](https://img.shields.io/npm/v/@envheaven/plugins-offline-web-ui)](https://www.npmjs.com/package/@envheaven/plugins-offline-web-ui)
+[![license](https://img.shields.io/npm/l/@envheaven/plugins-offline-web-ui)](#license)
+[![plugin](https://img.shields.io/badge/envheaven-plugin-blue)](#usage)
+[![UI](https://img.shields.io/badge/ui-offline%20web%20ui-blue)](#usage)
+[![status](https://img.shields.io/badge/status-experimental%200.x-orange)](#experimental-0x)
+
+</div>
 
 > **Experimental 0.x:** EnvHeaven is currently in experimental `0.x` development. APIs, CLI commands, plugin contracts, package names, and release behavior may change before `1.0.0`. Pin versions and read release notes before using it in production workflows.
 
-## Package rename
+## Install
 
-The corrected package name is:
+| Channel | Install | Purpose |
+|---|---|---|
+| `release` | `npm install @envheaven/plugins-offline-web-ui@release` | recommended 0.x release track after publication |
+| `latest` | `npm install @envheaven/plugins-offline-web-ui` | npm default alias for the release track after publication |
+| `exp` | `npm install @envheaven/plugins-offline-web-ui@exp` | experimental builds with newer changes after publication |
 
-```txt
-@envheaven/plugins-offline-web-ui
+Install compatible `envheaven` host package in the same workflow.
+
+## Usage
+
+Serve local Offline Web UI for EnvHeaven daemon workflows.
+
+```jsonc
+{
+  "pluginPackage": "@envheaven/plugins-offline-web-ui",
+  "Execution": {
+    "cwd": "."
+  }
+}
 ```
-
-The old typo package `@envheaven/plugins-offiline-web-ui` was verified on NPM and is kept only as migration/deprecation history. The corrected package was prepared here but public NPM publication was not verified yet.
 
 ## What it does
 
-This package provides a local Angular UI and server wrapper for the EnvHeaven daemon.
-
-It supports:
-
-- listing known EnvHeaven repos and artifacts.
-- viewing daemon status and local state.
-- managing artifact version registry values.
-- running and viewing action terminals.
-- opening PTY terminal sessions backed by the daemon.
-- using Action Board presets and terminal slots in the local UI.
-
-It is not a hosted cloud dashboard.
-
-## Install
-
-```sh
-# release track, after corrected package publication
-npm install @envheaven/plugins-offline-web-ui@release
-
-# npm default alias for the release track, after publication
-npm install @envheaven/plugins-offline-web-ui
-
-# experimental track, after publication
-npm install @envheaven/plugins-offline-web-ui@exp
-```
-
-Install the EnvHeaven host package too:
-
-```sh
-npm install envheaven
-```
-
-## Run
-
-From an EnvHeaven workflow, the core CLI can launch the UI package when available:
-
-```sh
-envheaven offline-web-ui
-```
-
-The package also exposes a binary:
-
-```sh
-envheaven-offline-web-ui --daemon-url http://127.0.0.1:42990 --port 0
-```
-
-A temporary legacy binary alias, `envheaven-offiline-web-ui`, is retained in package metadata for compatibility during the rename.
+- local Angular UI for daemon state.
+- action terminals and PTY sessions.
+- artifact version registry management.
+- Dynamic View / Action Board workflows.
 
 ## Requirements
 
-- Node.js `>=20`.
-- EnvHeaven daemon available locally.
-- Browser access to the local UI server.
+Node.js `>=20`, EnvHeaven daemon, and browser access to the local UI server.
 
-## Current limitations
+## Release Channels
 
-- The UI is local/offline-first and depends on daemon APIs.
-- It does not provide a hosted account system.
-- Terminal/session behavior is tied to the running daemon process.
-- UI contracts may change before EnvHeaven `1.0.0`.
+| Channel | Install | Purpose |
+|---|---|---|
+| `release` | `npm install @envheaven/plugins-offline-web-ui@release` | recommended 0.x release track after publication |
+| `latest` | `npm install @envheaven/plugins-offline-web-ui` | npm default alias for the release track after publication |
+| `exp` | `npm install @envheaven/plugins-offline-web-ui@exp` | experimental builds with newer changes after publication |
 
-## Related
+`release` is the recommended 0.x track, not a stable API promise.
+The legacy typo package `@envheaven/plugins-offiline-web-ui` remains only for migration/deprecation history. Active commands should use `offline`.
 
-- [`envheaven`](https://www.npmjs.com/package/envheaven)
-- [`@envheaven/plugins-nodejs-pnpm`](https://www.npmjs.com/package/@envheaven/plugins-nodejs-pnpm)
-- [`@envheaven/plugins-firebase-hosting-deploy`](https://www.npmjs.com/package/@envheaven/plugins-firebase-hosting-deploy)
+This package is prepared for publication, but current registry verification did not find it on NPM.
+
+
+## Status
+
+Experimental. Plugin contracts may change before EnvHeaven `1.0.0`.
 
 ## License
 
