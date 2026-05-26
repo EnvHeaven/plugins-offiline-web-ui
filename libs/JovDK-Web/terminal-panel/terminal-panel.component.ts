@@ -40,6 +40,7 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
   private socket: WebSocket | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private domCleanup: Array<() => void> = [];
+  private suppressPasteEventUntil = 0;
 
   ngAfterViewInit(): void {
     this.initTerminal();
@@ -183,6 +184,10 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
     const host = this.terminalHost.nativeElement;
 
     const onPaste = (event: ClipboardEvent): void => {
+      if (Date.now() < this.suppressPasteEventUntil) {
+        event.preventDefault();
+        return;
+      }
       const text = event.clipboardData?.getData('text/plain') ?? '';
       if (!text) return;
       event.preventDefault();
@@ -223,7 +228,14 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
 
     if (this.isPasteShortcut(event)) {
       this.preventTerminalShortcut(event);
+      this.suppressNextPasteEvent();
       void this.pasteFromClipboard();
+      return false;
+    }
+
+    if (this.isCtrlBackspace(event)) {
+      this.preventTerminalShortcut(event);
+      this.sendWordErase();
       return false;
     }
 
@@ -239,9 +251,17 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
     return event.metaKey || event.ctrlKey;
   }
 
+  private isCtrlBackspace(event: KeyboardEvent): boolean {
+    return event.ctrlKey && !event.altKey && !event.metaKey && (event.key === 'Backspace' || event.code === 'Backspace');
+  }
+
   private preventTerminalShortcut(event: KeyboardEvent): void {
     event.preventDefault();
     event.stopPropagation();
+  }
+
+  private suppressNextPasteEvent(): void {
+    this.suppressPasteEventUntil = Date.now() + 1000;
   }
 
   private hasTerminalSelection(): boolean {
@@ -277,12 +297,11 @@ export class TerminalPanelComponent implements AfterViewInit, OnDestroy, OnChang
   }
 
   private sendPastedText(text: string): void {
-    const paste = (this.terminal as unknown as { paste?: (data: string) => void } | null)?.paste;
-    if (typeof paste === 'function') {
-      paste.call(this.terminal, text);
-      return;
-    }
     this.sendTerminalInput(text);
+  }
+
+  private sendWordErase(): void {
+    this.sendTerminalInput('\x17');
   }
 
   private sendTerminalInput(data: string): void {
